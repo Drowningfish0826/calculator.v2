@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<title>線性規劃計算器｜系統說明文件</title>
+<style>
+  @page { size: A4; margin: 0; }
+
+  :root {
+    --ink: #16191c;
+    --ink-2: #4d585f;
+    --ink-3: #7c878e;
+    --rule: #ddd9cf;
+    --rule-strong: #b9b4a8;
+    --pruss: #0f4a6e;
+    --jade: #1c6b57;
+    --serif: "Noto Serif TC", "Songti TC", serif;
+    --sans: "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+    --mono: "Cascadia Mono", "Consolas", monospace;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+
+  body {
+    font-family: var(--sans);
+    font-size: 9.5pt;
+    line-height: 1.7;
+    color: var(--ink);
+    background: #eceae4;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .page {
+    width: 210mm;
+    height: 297mm;
+    padding: 15mm 16mm 12mm;
+    background: #fff;
+    margin: 0 auto;
+    position: relative;
+    overflow: hidden;
+    page-break-after: always;
+    break-after: page;
+  }
+
+  .page:last-child { page-break-after: auto; break-after: auto; }
+
+  .runhead {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    border-bottom: 0.6pt solid var(--rule);
+    padding-bottom: 1.6mm;
+    margin-bottom: 5mm;
+    font-size: 7.4pt;
+    letter-spacing: 0.14em;
+    color: var(--ink-3);
+  }
+
+  .runhead .rh-left { font-family: var(--serif); font-size: 7.6pt; letter-spacing: 0.06em; color: var(--ink-2); }
+
+  .runfoot {
+    position: absolute;
+    left: 16mm;
+    right: 16mm;
+    bottom: 7mm;
+    display: flex;
+    justify-content: space-between;
+    font-size: 7.2pt;
+    color: var(--ink-3);
+    letter-spacing: 0.1em;
+    border-top: 0.5pt solid var(--rule);
+    padding-top: 1.6mm;
+  }
+
+  /* ── 封面 ── */
+  .cover-tag { font-size: 7.8pt; letter-spacing: 0.3em; color: var(--pruss); margin-bottom: 5mm; }
+
+  h1.cover-title {
+    font-family: var(--serif);
+    font-size: 33pt;
+    line-height: 1.12;
+    letter-spacing: -0.01em;
+    margin: 0 0 2.6mm;
+  }
+
+  .cover-sub { font-family: var(--serif); font-size: 10.5pt; color: var(--ink-2); letter-spacing: 0.06em; margin-bottom: 6mm; }
+
+  .cover-lede {
+    font-size: 10.2pt;
+    line-height: 1.85;
+    color: var(--ink-2);
+    max-width: 132mm;
+    border-left: 1.6pt solid #f2c230;
+    padding-left: 5mm;
+    margin-bottom: 6mm;
+  }
+
+  .meta-table { width: 100%; border-collapse: collapse; font-size: 8.6pt; margin-bottom: 6mm; }
+
+  .meta-table th {
+    text-align: left; font-weight: 400; color: var(--ink-3); width: 24mm;
+    padding: 1.4mm 0; border-bottom: 0.5pt solid var(--rule); letter-spacing: 0.08em;
+  }
+
+  .meta-table td { padding: 1.4mm 0; border-bottom: 0.5pt solid var(--rule); }
+
+  .cover-shot { border: 0.6pt solid var(--rule); border-radius: 1.5mm; overflow: hidden; background: #fff; }
+  .cover-shot img { width: 100%; display: block; }
+
+  .quick-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    border-top: 0.8pt solid var(--rule-strong);
+    border-bottom: 0.8pt solid var(--rule-strong);
+    margin-top: 7mm;
+  }
+
+  .quick-stat { padding: 3mm 4mm 3mm 0; border-right: 0.5pt solid var(--rule); }
+  .quick-stat:last-child { border-right: 0; }
+  .quick-stat .n { font-family: var(--serif); font-size: 17pt; line-height: 1.1; }
+  .quick-stat .l { font-size: 7.6pt; color: var(--ink-3); letter-spacing: 0.08em; margin-top: 1mm; }
+
+  /* ── 標題 ── */
+  h2 {
+    font-family: var(--serif); font-size: 14.5pt; margin: 0 0 3.4mm;
+    letter-spacing: 0.01em; display: flex; align-items: baseline; gap: 3mm;
+  }
+
+  h2 .no {
+    font-family: var(--mono); font-size: 8pt; color: var(--ink-3); letter-spacing: 0.1em;
+    border-bottom: 0.6pt solid var(--rule-strong); padding-bottom: 0.5mm;
+  }
+
+  h3 { font-family: var(--serif); font-size: 10.2pt; margin: 4.6mm 0 1.8mm; }
+  p { margin: 0 0 2.2mm; }
+
+  .lead { font-size: 9.8pt; line-height: 1.78; color: var(--ink-2); margin-bottom: 4mm; }
+
+  /* ── 表格 ── */
+  table.grid { width: 100%; border-collapse: collapse; font-size: 8.2pt; margin-bottom: 3mm; }
+
+  table.grid th {
+    text-align: left; font-weight: 500; font-size: 7.6pt; letter-spacing: 0.08em;
+    color: var(--ink-2); border-bottom: 0.8pt solid var(--rule-strong);
+    padding: 1.4mm 2.2mm 1.2mm; background: #f7f6f2;
+  }
+
+  table.grid td { border-bottom: 0.5pt solid var(--rule); padding: 1.4mm 2.2mm; vertical-align: top; }
+  table.grid td.k { width: 26mm; color: var(--ink-2); }
+  table.grid .center { text-align: center; }
+
+  .done {
+    display: inline-block; font-size: 7.2pt; letter-spacing: 0.05em; color: var(--jade);
+    border: 0.5pt solid #b6d3c9; background: #eef6f2; border-radius: 0.8mm; padding: 0.1mm 1.3mm;
+  }
+
+  .tagline { font-size: 7.4pt; color: var(--ink-3); white-space: nowrap; }
+
+  /* ── 特色 ── */
+  .features {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 0;
+    border-top: 0.6pt solid var(--rule-strong); margin-bottom: 4mm;
+  }
+
+  .feature { padding: 2.8mm 5mm 2.8mm 0; border-bottom: 0.5pt solid var(--rule); }
+  .feature:nth-child(odd) { padding-right: 6mm; }
+  .feature-title { font-family: var(--serif); font-size: 9.6pt; margin-bottom: 0.8mm; }
+  .feature-title .idx { font-family: var(--mono); font-size: 7.2pt; color: var(--pruss); margin-right: 2mm; }
+  .feature p { font-size: 8.3pt; line-height: 1.68; color: var(--ink-2); margin: 0; }
+
+  /* ── 圖 ── */
+  figure { margin: 0 0 3.4mm; }
+  figure img { width: 100%; display: block; border: 0.6pt solid var(--rule); border-radius: 1.4mm; }
+  figure.narrow { margin-left: auto; margin-right: auto; width: 162mm; }
+  figcaption { font-size: 7.4pt; color: var(--ink-3); margin-top: 1.4mm; letter-spacing: 0.02em; line-height: 1.6; }
+  figcaption b { color: var(--ink-2); font-weight: 500; }
+
+  .fig-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; margin-bottom: 3.4mm; }
+  .fig-pair figure { margin: 0; }
+
+  /* ── 程式碼／架構 ── */
+  pre {
+    font-family: var(--mono); font-size: 7.3pt; line-height: 1.58;
+    background: #f7f6f2; border-left: 1.6pt solid var(--pruss);
+    padding: 2.6mm 3.4mm; margin: 0 0 2.6mm; white-space: pre; color: #2b3338;
+  }
+
+  code {
+    font-family: var(--mono); font-size: 8pt; background: #f4f2ec;
+    padding: 0.2mm 1.1mm; border-radius: 0.6mm;
+  }
+
+  .arch { display: grid; grid-template-columns: repeat(5, 1fr); border: 0.6pt solid var(--rule); border-radius: 1.2mm; overflow: hidden; margin-bottom: 2.6mm; }
+  .arch-step { padding: 2.2mm 2.6mm; border-right: 0.5pt solid var(--rule); background: #fbfaf7; }
+  .arch-step:last-child { border-right: 0; }
+  .arch-step .step-no { font-family: var(--mono); font-size: 6.8pt; color: var(--ink-3); letter-spacing: 0.1em; }
+  .arch-step .step-name { font-family: var(--serif); font-size: 8.8pt; margin: 0.5mm 0 0.8mm; }
+  .arch-step .step-file { font-family: var(--mono); font-size: 6.6pt; color: var(--pruss); line-height: 1.45; word-break: break-all; }
+
+  ul.tight { margin: 0 0 2.6mm; padding-left: 4.4mm; }
+  ul.tight li { margin-bottom: 1mm; font-size: 8.6pt; }
+  ol.tight { margin: 0 0 2.6mm; padding-left: 4.8mm; }
+  ol.tight li { margin-bottom: 1.2mm; font-size: 8.7pt; }
+
+  .note {
+    font-size: 8.2pt; color: var(--ink-2); background: #f7f6f2;
+    border-left: 1.6pt solid #f2c230; padding: 2.4mm 3.6mm; margin: 0 0 3mm;
+  }
+
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 0 7mm; }
+  .two-col p { font-size: 8.8pt; }
+
+  .em { color: var(--pruss); font-weight: 500; }
+  .small { font-size: 7.8pt; color: var(--ink-3); }
+  .mt { margin-top: 3.6mm; }
+
+  .toc { margin-top: 8mm; }
+  .toc-row {
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-size: 8.8pt; color: var(--ink-2);
+    padding: 2mm 0; border-bottom: 0.5pt solid var(--rule);
+  }
+  .toc-row:first-child { border-top: 0.5pt solid var(--rule); }
+  .toc-row span:last-child { font-family: var(--mono); font-size: 8pt; color: var(--ink-3); }
+</style>
+</head>
+<body>
+
+<!-- ══════════════ 1／封面 ══════════════ -->
+<section class="page">
+  <div class="cover-tag">管 理 數 學 · 作 業 一 · 系 統 說 明 文 件</div>
+  <h1 class="cover-title">線性規劃計算器</h1>
+  <div class="cover-sub">Web-based Linear Programming Calculator</div>
+
+  <p class="cover-lede">
+    把「建立模型 → 自動求解 → 結果解讀」壓縮在同一個畫面。左邊輸入係數與限制式，
+    右邊即時算出最佳解、影子價格與可行區域；所有數字都是精確有理數，不是浮點近似。
+  </p>
+
+  <table class="meta-table">
+    <tr><th>課程名稱</th><td>管理數學</td><th style="width:22mm">繳交項目</th><td>網頁專案、系統說明文件</td></tr>
+    <tr><th>組別</th><td>個人組／多人組（請勾選）</td><th>學號／姓名</th><td>＿＿＿＿＿＿＿＿＿＿＿＿</td></tr>
+    <tr><th>開發工具</th><td>HTML／CSS／JavaScript（無框架、無建置）</td><th>繳交日期</th><td>2026 年 ＿＿ 月 ＿＿ 日</td></tr>
+  </table>
+
+  <div class="cover-shot">
+    <img src="img/01-solution.png" alt="系統主畫面：左側模型設定，右側最佳解與管理意涵">
+  </div>
+  <p class="small" style="margin-top:2mm">
+    系統主畫面。左側依序完成問題設定、決策變數、目標函數與限制式；右側立即呈現最佳解、變數表與自動產生的管理意涵。
+  </p>
+
+  <div class="quick-stats">
+    <div class="quick-stat"><div class="n">5</div><div class="l">分析分頁</div></div>
+    <div class="quick-stat"><div class="n">3</div><div class="l">管理科學範本</div></div>
+    <div class="quick-stat"><div class="n">41</div><div class="l">項自動測試</div></div>
+    <div class="quick-stat"><div class="n">0</div><div class="l">外部依賴</div></div>
+  </div>
+
+  <div class="toc">
+    <div class="toc-row"><span>一、系統概述——設計理念與作業要求對照</span><span>2</span></div>
+    <div class="toc-row"><span>二、功能示範——求解結果、圖形與敏感度</span><span>3</span></div>
+    <div class="toc-row"><span>三、操作流程與實作技術</span><span>4</span></div>
+    <div class="toc-row"><span>四、系統架構、驗證方式與開發心得</span><span>5</span></div>
+  </div>
+
+  <div class="runfoot">
+    <span>線性規劃計算器 · 系統說明文件</span>
+    <span>1 / 5</span>
+  </div>
+</section>
+
+<!-- ══════════════ 2／設計理念與功能對照 ══════════════ -->
+<section class="page">
+  <div class="runhead">
+    <span class="rh-left">一、系統概述</span>
+    <span>LINEAR PROGRAMMING CALCULATOR</span>
+  </div>
+
+  <h2><span class="no">01</span>設計理念</h2>
+  <p class="lead">
+    管理數學的難點很少是「按計算機」，多半是「模型建立得對不對」以及「算出來的數字代表什麼」。
+    這套系統把三個環節接成一條線：<span class="em">輸入即模型</span>、<span class="em">模型即求解</span>、
+    <span class="em">求解即解讀</span>。使用者不必先懂單純形法，也能看到它怎麼運作。
+  </p>
+
+  <div class="features">
+    <div class="feature">
+      <div class="feature-title"><span class="idx">A</span>精確有理數，而不是浮點數</div>
+      <p>求解核心以 BigInt 分數實作，樞紐運算都是分數加減乘除。因此影子價格顯示成 <code>50/3</code>，
+        不會變成 16.666666；敏感度範圍也是精確邊界。</p>
+    </div>
+    <div class="feature">
+      <div class="feature-title"><span class="idx">B</span>輸入即求解</div>
+      <p>每次修改係數、改變「≤／≥」、增刪變數，右側會在 140 毫秒內重算。可以像調旋鈕一樣觀察最佳解怎麼跳動。</p>
+    </div>
+    <div class="feature">
+      <div class="feature-title"><span class="idx">C</span>把數學翻譯成管理語言</div>
+      <p>自動產生「最佳決策組合、瓶頸資源、仍有餘裕的資源、資源邊際價值」等段落，把 x₁ = 40、Z* = 3,600
+        轉成可以直接寫進報告的句子。</p>
+    </div>
+    <div class="feature">
+      <div class="feature-title"><span class="idx">D</span>演算法是看得見的</div>
+      <p>單純形法保留每一次 pivot 的完整表格（含第一階段人工變數），可逐張對照課本；兩變數問題另有可行區域圖與可拖動的等利潤線。</p>
+    </div>
+  </div>
+
+  <h2 class="mt"><span class="no">02</span>功能與作業要求對照</h2>
+  <table class="grid">
+    <thead>
+      <tr><th style="width:27%">作業要求</th><th style="width:46%">本系統實作</th><th style="width:10%">狀態</th><th>位置</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>問題類型（最大化／最小化）</td><td>切換後自動重建數學模型，目標函數同步改寫</td><td><span class="done">完成</span></td><td class="tagline">問題設定</td></tr>
+      <tr><td>決策變數與非負限制</td><td>1～10 個可命名變數；可取消非負限制（改以自由變數拆分處理）</td><td><span class="done">完成</span></td><td class="tagline">決策變數</td></tr>
+      <tr><td>目標函數輸入與自動顯示</td><td>係數即時排版成數學式，支援分數輸入</td><td><span class="done">完成</span></td><td class="tagline">目標函數</td></tr>
+      <tr><td>多條限制式與完整模型顯示</td><td>≤／=／≥ 與右端值；模型以 max、subject to、非負與整數條件排版呈現</td><td><span class="done">完成</span></td><td class="tagline">限制式／模型預覽</td></tr>
+      <tr><td>整數規劃／0-1 規劃</td><td>分支定界法，含節點紀錄與 LP 鬆弛差距</td><td><span class="done">完成</span></td><td class="tagline">整數規劃</td></tr>
+      <tr><td>求解、最佳解與 Z*</td><td>兩階段單純形法；無可行解／無界解皆有專屬說明與檢查建議</td><td><span class="done">完成</span></td><td class="tagline">最佳解</td></tr>
+      <tr><td>結果解讀與限制式狀態</td><td>自動生成管理意涵；列出左側值、右側值、鬆弛／盈餘、緊束與影子價格</td><td><span class="done">完成</span></td><td class="tagline">最佳解／限制分析</td></tr>
+      <tr><td>敏感度分析</td><td>影子價格、右端允許範圍、目標係數允許範圍</td><td><span class="done">完成</span></td><td class="tagline">敏感度</td></tr>
+      <tr><td>圖形分析（兩變數）</td><td>限制式、可行區域、頂點、最佳解、可拖動等利潤線</td><td><span class="done">完成</span></td><td class="tagline">圖形</td></tr>
+      <tr><td>進階：範本庫與文字建模</td><td>運輸、指派、生產計劃三個範本，走完「輸入→建模→求解→分析」；另有自然語言與速記格式建模</td><td><span class="done">完成</span></td><td class="tagline">範本庫／文字建模</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note" style="margin-top:2mm">
+    <b>額外功能</b>：一頁式求解報告（可列印成 PDF）、模型 JSON 匯出與匯入、CSV 匯出、分享連結、深色模式、鍵盤快捷鍵、
+    行動版底部摘要列。
+  </div>
+
+  <div class="runfoot">
+    <span>一、系統概述</span>
+    <span>2 / 5</span>
+  </div>
+</section>
+
+<!-- ══════════════ 3／求解結果 ══════════════ -->
+<section class="page">
+  <div class="runhead">
+    <span class="rh-left">二、功能示範</span>
+    <span>SOLUTION · GRAPH · SENSITIVITY</span>
+  </div>
+
+  <h2><span class="no">03</span>求解結果與管理意涵</h2>
+  <p>
+    以「生產組合決策」為例：兩條產線共用人力與原料，另受產品 A 的需求上限限制。系統算出最佳生產方案為
+    A、B 各 40 單位，總利潤 3,600 千元；人力與原料兩條限制式在最佳解下等號成立，影子價格分別為 20 與 10，
+    代表每多一單位人力可再增加 20 千元利潤，而產品 A 的需求上限還有 10 單位餘裕、不是瓶頸。
+  </p>
+
+  <figure class="narrow" style="width:150mm">
+    <img src="img/07-graph.png" alt="圖形分析：可行區域、緊束限制式、等利潤線與最佳解">
+    <figcaption><b>圖 1</b>　圖形分析。藍線為限制式、紅線為在最佳解下緊束的限制式；虛線是等利潤線。
+      拖動下方滑桿可以看到等利潤線平移，直到與可行區域相切的位置就是最佳解。</figcaption>
+  </figure>
+
+  <figure class="narrow" style="width:150mm">
+    <img src="img/08-sensitivity.png" alt="敏感度分析：影子價格、右端允許範圍、目標係數允許範圍">
+    <figcaption><b>圖 2</b>　敏感度分析。影子價格回答「該不該加購資源」，允許範圍回答「加購多少以內仍然划算」。
+      範圍邊界由 B⁻¹ 精確算出，並以「邊界內外各自重新求解」交叉驗證。</figcaption>
+  </figure>
+
+  <p style="font-size:8.6pt">
+    「限制分析」分頁把每條限制式的左側值、鬆弛或盈餘量、是否緊束與影子價格並列；「單純形法」分頁則保留每一次
+    pivot 的表格（黃色為換入欄、藍色為換出列），最後一張表就是最佳解，可與課本逐格核對。
+  </p>
+
+  <div class="runfoot">
+    <span>二、功能示範</span>
+    <span>3 / 5</span>
+  </div>
+</section>
+
+<!-- ══════════════ 4／操作流程與技術 ══════════════ -->
+<section class="page">
+  <div class="runhead">
+    <span class="rh-left">三、操作流程與實作技術</span>
+    <span>WORKFLOW · TECHNOLOGY</span>
+  </div>
+
+  <h2><span class="no">04</span>五個步驟完成一次分析</h2>
+  <ol class="tight">
+    <li><b>選問題類型</b>：最大化或最小化，並填寫目標名稱與單位（會出現在結果解讀中）。</li>
+    <li><b>設定變數</b>：決定變數個數；必要時勾選「整數」或「0-1」，系統自動改用分支定界法。</li>
+    <li><b>填目標係數</b>：每個變數的單位貢獻，可直接輸入分數（如 <code>7/3</code>）。</li>
+    <li><b>建立限制式</b>：係數、≤／=／≥、右端值；每條都可命名，方便後續解讀與報告引用。</li>
+    <li><b>讀結果</b>：右側五個分頁——最佳解、限制分析、敏感度、圖形、單純形法。</li>
+  </ol>
+
+  <figure class="narrow" style="width:152mm">
+    <img src="img/09-simplex.png" alt="單純形法逐步檢查：迭代選擇與最終表格">
+    <figcaption><b>圖 3</b>　單純形法分頁。可用上方編號切換每一張表；最後一張即最佳解，
+      檢定數全為 ≤ 0，表中的分數（−1/3、2/3）就是精確運算的痕跡。</figcaption>
+  </figure>
+
+  <h2><span class="no">05</span>使用技術</h2>
+  <table class="grid">
+    <thead><tr><th style="width:22%">層次</th><th>作法與理由</th></tr></thead>
+    <tbody>
+      <tr><td class="k">前端框架</td><td>不使用框架，以原生 JavaScript 分層撰寫。完全離線、雙擊 <code>index.html</code> 就能執行，不需要 npm 或伺服器。</td></tr>
+      <tr><td class="k">數值表示</td><td><code>Fraction</code> 類別以 BigInt 儲存分子分母，全程精確運算；顯示時才轉成小數或分數。</td></tr>
+      <tr><td class="k">求解演算法</td><td>兩階段單純形法（Phase I 建立可行基、Phase II 求最佳解），Dantzig 規則搭配退化時改用 Bland 規則避免循環。</td></tr>
+      <tr><td class="k">敏感度與整數</td><td>由 B⁻¹ 推出影子價格與允許範圍；整數規劃以分支定界求解，並以目前最佳整數解剪枝。</td></tr>
+      <tr><td class="k">圖形與版面</td><td>可行區域以半平面裁切（Sutherland–Hodgman）求交後輸出 SVG；版面以 CSS 設計權杖控制，含深色模式與 A4 列印樣式。</td></tr>
+    </tbody>
+  </table>
+
+  <h3>進階功能的設計取捨</h3>
+  <p style="font-size:8.6pt">
+    <b>運輸問題</b>：供需不平衡時，系統自動補上成本為 0 的虛擬供給列或需求欄，讓等式限制式維持成立，
+    並在提示中說明補了什麼；結果以矩陣呈現，同時標出各列已出貨量與各欄需求量。
+    <b>指派問題</b>：直接以 LP 求解即可，因為指派問題的限制矩陣具全單模性，鬆弛解必然落在 0-1 頂點，
+    所以不需要分支。 <b>文字建模</b>：採離線規則引擎（不呼叫外部 API），先抽取產品、單位貢獻、資源耗用與上限，
+    再列出「找到了什麼」與信心度；解析結果一定回到可編輯的表單，避免黑箱。
+  </p>
+
+  <div class="runfoot">
+    <span>三、操作流程與實作技術</span>
+    <span>4 / 5</span>
+  </div>
+</section>
+
+<!-- ══════════════ 5／架構、驗證、心得 ══════════════ -->
+<section class="page">
+  <div class="runhead">
+    <span class="rh-left">四、系統架構、驗證與心得</span>
+    <span>ARCHITECTURE · VERIFICATION</span>
+  </div>
+
+  <h2><span class="no">06</span>系統架構</h2>
+  <p class="lead" style="margin-bottom:3mm">
+    單向資料流：輸入 → 模型物件 → 求解引擎 → 結果物件 → 視圖。引擎完全不碰 DOM，因此可以直接用
+    Node.js 跑單元測試；視圖層也不做數學，只負責排版。
+  </p>
+
+  <div class="arch">
+    <div class="arch-step"><div class="step-no">01</div><div class="step-name">輸入表單</div>
+      <div class="step-file">index.html<br>app.js</div></div>
+    <div class="arch-step"><div class="step-no">02</div><div class="step-name">模型物件</div>
+      <div class="step-file">model.js<br>驗證 · 排版<br>分享編碼</div></div>
+    <div class="arch-step"><div class="step-no">03</div><div class="step-name">求解引擎</div>
+      <div class="step-file">fraction.js<br>solver.js</div></div>
+    <div class="arch-step"><div class="step-no">04</div><div class="step-name">結果分析</div>
+      <div class="step-file">interpret()<br>敏感度 · B&amp;B</div></div>
+    <div class="arch-step"><div class="step-no">05</div><div class="step-name">視圖</div>
+      <div class="step-file">views.js<br>graph.js</div></div>
+  </div>
+
+  <pre>LPCalculator/
+  index.html                  主畫面（單頁應用，無需建置）
+  assets/css/app.css          設計權杖、版面、深色模式、A4 列印樣式
+  assets/js/fraction.js       精確有理數（BigInt 分子／分母）
+  assets/js/solver.js         兩階段單純形法、敏感度、分支定界
+  assets/js/model.js          模型物件、驗證、數學式排版、管理意涵
+  assets/js/recipes.js        內建例題與三種管理科學範本
+  assets/js/parser.js         文字建模（自然語言規則引擎）
+  assets/js/graph.js          可行區域圖（SVG 半平面裁切）
+  assets/js/views.js          結果分頁、單純形表、列印報告
+  assets/js/app.js            狀態管理、事件綁定、匯出
+  tests/engine.test.js        引擎自我檢測（41 項）
+  docs/                       系統說明文件與截圖</pre>
+
+  <h2><span class="no">07</span>驗證方式</h2>
+  <ul class="tight">
+    <li><b>兩變數問題</b>：以頂點列舉法暴力求解，比對最佳值與最佳解。</li>
+    <li><b>影子價格</b>：把右端常數擾動 0.5 後重新求解，用差分回推邊際變化量，必須等於影子價格。</li>
+    <li><b>敏感度範圍</b>：在範圍邊界內外各重新求解，確認「範圍內斜率不變、範圍外斜率改變」。</li>
+    <li><b>整數規劃</b>：以暴力列舉（背包問題 2⁴ 種組合）驗證整數最佳解。</li>
+    <li><b>運輸問題</b>：檢查總運輸量與供需平衡，並用成本矩陣重算目標值。</li>
+  </ul>
+  <p class="small">執行 <code>node tests/engine.test.js</code>，目前 41 項全部通過，涵蓋無可行解、無界解、等式限制式、
+    右端為負、自由變數、退化問題與多重最佳解。</p>
+
+  <h2><span class="no">08</span>開發心得</h2>
+  <div class="two-col">
+    <div>
+      <p>一開始我以為難點在「畫表格」，動手後才發現真正的問題在<span class="em">數值</span>。用浮點數寫單純形法時，
+        影子價格常常變成 0.9999999 或 −2.3e−14，一看就知道不對；改成 BigInt 分數後，樞紐運算變成整數通分，
+        不但答案乾淨，連允許範圍都能給出精確邊界。</p>
+      <p>第二個體會是<span class="em">敏感度不是另一個模組，而是最佳解的副產品</span>。只要在最終表留住初始基變數的欄位，
+        B⁻¹ 就在那裡；影子價格、右端範圍、目標係數範圍全由它推得。理解這件事之後，我才真正看懂
+        「為什麼影子價格等於檢定數」。</p>
+    </div>
+    <div>
+      <p>最後是介面。我刻意讓結果「跟著輸入跑」：改一個係數，右邊的最佳解與圖形立刻變。用這種方式理解敏感度，
+        比讀十頁公式有效——把產品 A 的利潤一路往上調，看著最佳解從 (40, 40) 跳到 (50, 0)，
+        就會明白「目標係數允許範圍」在說什麼。</p>
+      <p>如果時間再多一些，想補上運輸問題的 MODI／階石法對照、多重目標規劃，以及把文字建模接上真正的大型語言模型，
+        讓它讀懂更口語的題目描述。</p>
+    </div>
+  </div>
+
+  <div class="note">
+    <b>使用方式</b>：解壓縮後直接雙擊 <code>index.html</code>（建議 Chrome／Edge）。所有計算都在瀏覽器本機完成，
+    不需網路、也不上傳任何資料。
+  </div>
+
+  <div class="runfoot">
+    <span>四、系統架構、驗證與心得</span>
+    <span>5 / 5</span>
+  </div>
+</section>
+
+</body>
+</html>

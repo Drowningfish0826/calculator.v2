@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="zh-Hant-TW" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>線性規劃計算器 · 管理數學作業</title>
+<meta name="description" content="可直接在瀏覽器使用的線性規劃計算器：建立模型、精確求解、影子價格與敏感度分析、可行區域圖形、單純形法逐步教學。">
+<link rel="stylesheet" href="assets/css/app.css">
+</head>
+<body>
+<a class="skip-link" href="#model-settings">跳至模型設定</a>
+
+<!-- ══════════════════════ 頂部工具列 ══════════════════════ -->
+<header class="topbar">
+  <div class="brand">
+    <svg class="brand-mark" viewBox="0 0 44 44" aria-hidden="true" focusable="false">
+      <path class="brand-axis" d="M6 38V8M6 38h30"/>
+      <path class="brand-region" d="M6 30 L14 12 L30 14 L34 26 L24 38 L6 38 Z"/>
+      <circle class="brand-point" cx="30" cy="14" r="2.4"/>
+      <path class="brand-line" d="M2 20 L42 20"/>
+    </svg>
+    <div class="brand-text">
+      <span class="brand-title">線性規劃計算器</span>
+      <span class="brand-sub">管理數學 · 作業一</span>
+    </div>
+  </div>
+
+  <nav class="mode-switch" role="tablist" aria-label="建模方式">
+    <button type="button" role="tab" id="tab-model" aria-controls="panel-model" aria-selected="true" data-mode="model">自訂模型</button>
+    <button type="button" role="tab" id="tab-library" aria-controls="panel-library" aria-selected="false" data-mode="library">範本庫</button>
+    <button type="button" role="tab" id="tab-text" aria-controls="panel-text" aria-selected="false" data-mode="text">文字建模</button>
+  </nav>
+
+  <div class="topbar-actions">
+    <button type="button" class="btn btn-quiet" id="btn-examples" aria-haspopup="dialog">例題</button>
+    <button type="button" class="btn btn-quiet" id="btn-share" aria-haspopup="dialog">分享</button>
+    <button type="button" class="btn btn-quiet" id="btn-export" aria-haspopup="dialog">匯出</button>
+    <button type="button" class="btn btn-icon" id="btn-theme" title="切換深色／淺色" aria-label="切換深色模式">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.2"/><path d="M10 2.8a7.2 7.2 0 000 14.4z" fill="currentColor" stroke="none"/></svg>
+    </button>
+    <button type="button" class="btn btn-icon" id="btn-help" title="操作說明（?）" aria-label="操作說明" aria-haspopup="dialog">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7.6 7.2a2.5 2.5 0 114.1 2c-.9.8-1.7 1.2-1.7 2.3M10 14.6v.6"/><circle cx="10" cy="10" r="7.2"/></svg>
+    </button>
+  </div>
+</header>
+
+<!-- ══════════════════════ 工作台 ══════════════════════ -->
+<main class="workbench">
+
+  <!-- ───────────── 左：設定 ───────────── -->
+  <section class="pane pane-input" aria-label="模型設定">
+
+    <!-- 模式一：自訂模型 -->
+    <div class="panel is-active" id="panel-model" role="tabpanel" aria-labelledby="tab-model">
+
+      <div class="source-banner" id="source-banner" hidden>
+        <span class="source-banner-text" id="source-banner-text"></span>
+        <button type="button" class="btn btn-link" id="source-banner-reset">回到空白模型</button>
+      </div>
+
+      <section class="step" id="model-settings">
+        <header class="step-head">
+          <span class="step-index">01</span>
+          <h2 class="step-title">問題設定</h2>
+          <span class="step-hint">先決定要極大化還是極小化</span>
+        </header>
+        <div class="field-group">
+          <div class="segmented" role="radiogroup" aria-label="問題類型">
+            <button type="button" role="radio" aria-checked="true" data-sense="max" class="is-active">最大化　max</button>
+            <button type="button" role="radio" aria-checked="false" data-sense="min">最小化　min</button>
+          </div>
+          <div class="field-row">
+            <label class="field">
+              <span class="field-label">目標名稱</span>
+              <input type="text" id="objective-label" class="input" placeholder="總利潤" autocomplete="off">
+            </label>
+            <label class="field field-narrow">
+              <span class="field-label">單位</span>
+              <input type="text" id="objective-unit" class="input" placeholder="元" autocomplete="off">
+            </label>
+          </div>
+        </div>
+      </section>
+
+      <section class="step">
+        <header class="step-head">
+          <span class="step-index">02</span>
+          <h2 class="step-title">決策變數</h2>
+          <span class="step-hint">手動建模最多 10 個，可分別設為整數或 0-1</span>
+        </header>
+        <div class="field-group">
+          <div class="var-toolbar">
+            <div class="stepper">
+              <span class="field-label">變數個數</span>
+              <div class="stepper-control">
+                <button type="button" class="stepper-button" id="var-minus" aria-label="減少一個變數">−</button>
+                <output id="var-count" class="stepper-value" aria-live="polite">2</output>
+                <button type="button" class="stepper-button" id="var-plus" aria-label="增加一個變數">＋</button>
+              </div>
+            </div>
+            <label class="check">
+              <input type="checkbox" id="nonneg" checked>
+              <span>套用非負限制 x<sub>i</sub> ≥ 0</span>
+            </label>
+          </div>
+          <div class="var-table-wrap">
+            <table class="var-table">
+              <thead>
+                <tr>
+                  <th scope="col">變數</th>
+                  <th scope="col">名稱</th>
+                  <th scope="col">整數</th>
+                  <th scope="col">0-1</th>
+                </tr>
+              </thead>
+              <tbody id="var-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="step">
+        <header class="step-head">
+          <span class="step-index">03</span>
+          <h2 class="step-title">目標函數</h2>
+          <span class="step-hint">輸入各變數的單位貢獻</span>
+        </header>
+        <div class="field-group">
+          <div class="coef-grid" id="objective-inputs"></div>
+          <div class="math-preview" id="objective-preview" aria-live="polite"></div>
+        </div>
+      </section>
+
+      <section class="step">
+        <header class="step-head">
+          <span class="step-index">04</span>
+          <h2 class="step-title">限制式</h2>
+          <span class="step-hint">係數、關係符號與右端值</span>
+        </header>
+        <div class="field-group">
+          <div id="constraint-list" class="constraint-list"></div>
+          <div class="step-actions">
+            <button type="button" class="btn btn-outline" id="add-constraint">＋ 新增限制式</button>
+            <button type="button" class="btn btn-quiet" id="clear-constraints">清除全部</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="step step-last">
+        <header class="step-head">
+          <span class="step-index">05</span>
+          <h2 class="step-title">模型預覽</h2>
+          <span class="step-hint">系統自動排版</span>
+        </header>
+        <div class="model-sheet">
+          <div id="model-preview" class="mathblock" aria-live="polite"></div>
+          <div class="model-sheet-actions">
+            <button type="button" class="btn btn-quiet btn-small" id="copy-model">複製模型文字</button>
+            <button type="button" class="btn btn-quiet btn-small" id="download-json">下載 JSON</button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- 模式二：範本庫 -->
+    <div class="panel" id="panel-library" role="tabpanel" aria-labelledby="tab-library" hidden>
+      <section class="step">
+        <header class="step-head">
+          <span class="step-index">A</span>
+          <h2 class="step-title">管理科學模型範本</h2>
+          <span class="step-hint">輸入問題資料，系統自動建立線性規劃模型</span>
+        </header>
+        <div id="library-cards" class="template-cards"></div>
+      </section>
+      <section class="step step-last" id="template-form-section" hidden>
+        <header class="step-head">
+          <span class="step-index">B</span>
+          <h2 class="step-title" id="template-form-title">資料輸入</h2>
+          <span class="step-hint" id="template-form-hint"></span>
+        </header>
+        <div id="template-form"></div>
+        <div class="step-actions">
+          <button type="button" class="btn btn-primary" id="template-build">建立模型並求解</button>
+          <button type="button" class="btn btn-quiet" id="template-cancel">取消</button>
+        </div>
+      </section>
+    </div>
+
+    <!-- 模式三：文字建模 -->
+    <div class="panel" id="panel-text" role="tabpanel" aria-labelledby="tab-text" hidden>
+      <section class="step">
+        <header class="step-head">
+          <span class="step-index">C</span>
+          <h2 class="step-title">用一段話描述問題</h2>
+          <span class="step-hint">離線規則引擎會抽取產品、利潤、資源與上限</span>
+        </header>
+        <div class="field-group">
+          <label class="field">
+            <span class="field-label">問題描述</span>
+            <textarea id="nl-input" class="input textarea" rows="7" spellcheck="false"
+              placeholder="例如：某工廠生產 A、B 兩種產品。每單位 A 的利潤為 30 元，每單位 B 的利潤為 50 元……"></textarea>
+          </label>
+          <div class="sample-row">
+            <span class="field-label">範例文字</span>
+            <button type="button" class="chip" data-sample="production">生產組合</button>
+            <button type="button" class="chip" data-sample="diet">飼料配方</button>
+            <button type="button" class="chip" data-sample="shorthand">速記格式</button>
+          </div>
+          <div class="field-row">
+            <button type="button" class="btn btn-primary" id="nl-parse">解析並建立模型</button>
+            <span class="field-note">解析結果可再回到「自訂模型」手動調整</span>
+          </div>
+        </div>
+      </section>
+      <section class="step step-last" id="nl-result-section" hidden>
+        <header class="step-head">
+          <span class="step-index">D</span>
+          <h2 class="step-title">解析結果</h2>
+          <span class="step-hint" id="nl-confidence"></span>
+        </header>
+        <div id="nl-result"></div>
+      </section>
+    </div>
+  </section>
+
+  <!-- ───────────── 右：結果 ───────────── -->
+  <section class="pane pane-result" aria-label="求解結果">
+    <div class="result-head" id="result-head">
+      <div class="verdict">
+        <div class="verdict-label" id="verdict-label">最佳解</div>
+        <div class="verdict-value" id="verdict-value">—</div>
+        <div class="verdict-sub" id="verdict-sub"></div>
+      </div>
+      <div class="verdict-side">
+        <div class="solve-status" id="solve-status" aria-live="polite"></div>
+        <div class="verdict-actions">
+          <button type="button" class="btn btn-primary" id="btn-solve">求解</button>
+          <label class="check check-compact">
+            <input type="checkbox" id="auto-solve" checked>
+            <span>即時求解</span>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <div class="result-tabs" role="tablist" aria-label="結果檢視">
+      <button type="button" role="tab" aria-selected="true" data-view="solution" class="is-active">最佳解</button>
+      <button type="button" role="tab" aria-selected="false" data-view="constraints">限制分析</button>
+      <button type="button" role="tab" aria-selected="false" data-view="sensitivity">敏感度</button>
+      <button type="button" role="tab" aria-selected="false" data-view="graph">圖形</button>
+      <button type="button" role="tab" aria-selected="false" data-view="simplex">單純形法</button>
+      <button type="button" role="tab" aria-selected="false" data-view="integer" id="tab-integer" hidden>整數規劃</button>
+    </div>
+
+    <div class="result-body" id="result-body" role="tabpanel" tabindex="-1" aria-live="polite"></div>
+  </section>
+</main>
+
+<!-- ══════════════════════ 對話框 ══════════════════════ -->
+<div class="dialog-backdrop" id="dialog-backdrop" hidden>
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title">
+    <header class="dialog-head">
+      <h2 class="dialog-title" id="dialog-title">標題</h2>
+      <button type="button" class="btn btn-icon" id="dialog-close" aria-label="關閉">✕</button>
+    </header>
+    <div class="dialog-body" id="dialog-body"></div>
+    <footer class="dialog-foot" id="dialog-foot"></footer>
+  </div>
+</div>
+
+<div class="toast-stack" id="toast-stack" aria-live="polite" aria-atomic="false"></div>
+
+<!-- 行動版底部摘要列 -->
+<div class="mobile-bar" id="mobile-bar">
+  <div class="mobile-bar-main">
+    <span class="mobile-bar-label" id="mobile-bar-label">最佳值</span>
+    <span class="mobile-bar-value" id="mobile-bar-value">—</span>
+  </div>
+  <button type="button" class="btn btn-primary btn-small" id="mobile-bar-jump">查看結果</button>
+</div>
+
+<!-- 匯出用列印版面（螢幕上隱藏） -->
+<div id="print-report" class="print-report" aria-hidden="true"></div>
+
+<script src="assets/js/fraction.js"></script>
+<script src="assets/js/solver.js"></script>
+<script src="assets/js/model.js"></script>
+<script src="assets/js/recipes.js"></script>
+<script src="assets/js/parser.js"></script>
+<script src="assets/js/graph.js"></script>
+<script src="assets/js/views.js"></script>
+<script src="assets/js/app.js"></script>
+</body>
+</html>
