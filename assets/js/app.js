@@ -667,6 +667,19 @@
       panel.classList.toggle('is-active', active);
       panel.hidden = !active;
     });
+    /* 目標規劃分頁有自己的結果面板：切換右側顯示哪一組 */
+    var goalMode = state.mode === 'goal';
+    document.body.classList.toggle('mode-goal', goalMode);
+    var goalResult = qs('#goal-result');
+    if (goalResult) {
+      goalResult.hidden = !goalMode;
+    }
+    ['#result-head', '.pane-result > .result-tabs', '#result-body'].forEach(function (selector) {
+      var node = qs(selector);
+      if (node) {
+        node.hidden = goalMode;
+      }
+    });
   }
 
   function switchMode(mode) {
@@ -677,6 +690,9 @@
     }
     if (mode === 'text') {
       renderNlResult();
+    }
+    if (mode === 'goal' && LPC.goalUI) {
+      LPC.goalUI.init();
     }
   }
 
@@ -1653,6 +1669,10 @@
       }
       if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
         event.preventDefault();
+        if (state.mode === 'goal' && LPC.goalUI) {
+          LPC.goalUI.solve(true);
+          return;
+        }
         solveNow();
         toast('已重新求解');
         return;
@@ -1702,5 +1722,12 @@
     state: state,
     solveNow: solveNow,
     renderInputs: renderInputs
+  };
+
+  /* 供「目標規劃」分頁（goalui.js）共用的小工具 */
+  LPC.util = {
+    toast: toast,
+    copyText: copyText,
+    download: download
   };
 })(typeof window !== 'undefined' ? window : globalThis);
