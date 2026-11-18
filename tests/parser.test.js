@@ -11,7 +11,7 @@ const path = require('path');
 const vm = require('vm');
 
 const ROOT = path.resolve(__dirname, '..');
-['assets/js/fraction.js', 'assets/js/model.js', 'assets/js/parser.js'].forEach((file) => {
+['assets/js/fraction.js', 'assets/js/model.js', 'assets/js/solver.js', 'assets/js/network.js', 'assets/js/parser.js'].forEach((file) => {
   vm.runInThisContext(fs.readFileSync(path.join(ROOT, file), 'utf8'), { filename: file });
 });
 const P = globalThis.LPC.parser;
@@ -367,6 +367,45 @@ check('API：SAMPLE_TEXTS 保留', !!P.SAMPLE_TEXTS.production && !!P.SAMPLE_TEX
   check('mode 為 natural', result.mode === 'natural');
   const shorthand = P.parseShorthand('max\n利潤 30 50\n人力 2 3 <= 120');
   check('速記 mode 為 shorthand', shorthand.mode === 'shorthand' && shorthand.ok === true && shorthand.confidence === 1);
+})();
+
+/* ------------------------------------------------------------------------- */
+/* 8. 網路題型（轉運／最短路徑／最大流量）                                    */
+/* ------------------------------------------------------------------------- */
+function expectNetwork(title, text, want) {
+  let result;
+  try {
+    result = P.parse(text);
+  } catch (error) {
+    check(title + '：不可丟出例外', false, error.message);
+    return;
+  }
+  check(title + '：判定為網路題型', result.mode === 'network', result.mode);
+  if (result.mode !== 'network') return;
+  check(title + '：題型', result.network.type === want.type, result.network.type);
+  if (want.nodes) check(title + '：節點數', result.network.nodes.length === want.nodes, result.network.nodes.length);
+  if (want.source) check(title + '：起點／Source', result.network.source === want.source, result.network.source);
+  if (want.sink) check(title + '：終點／Sink', result.network.sink === want.sink, result.network.sink);
+  const solved = globalThis.LPC.network.solve(result.network);
+  check(title + '：可以求解', solved.status === 'optimal', solved.status + ' ' + (solved.errors || []).join('|'));
+  if (want.z !== undefined) check(title + '：最佳值', Number(want.type === 'maxflow' ? solved.maxFlow : solved.z) === want.z, String(want.type === 'maxflow' ? solved.maxFlow : solved.z));
+  if (want.minConf !== undefined) check(title + '：信心度 ≥ ' + want.minConf, result.confidence >= want.minConf, result.confidence);
+  (want.warn || []).forEach((piece) => check(title + '：警告含「' + piece + '」', result.warnings.join('|').indexOf(piece) >= 0, result.warnings.join('|')));
+}
+expectNetwork('網路範例：最短路徑', P.SAMPLE_TEXTS.shortest, { type: 'shortest', nodes: 7, source: '1', sink: '7', z: 38, minConf: 0.95 });
+expectNetwork('網路範例：轉運', P.SAMPLE_TEXTS.transship, { type: 'transship', nodes: 8, z: 10043, minConf: 0.95 });
+expectNetwork('網路範例：最大流量', P.SAMPLE_TEXTS.maxflow, { type: 'maxflow', nodes: 7, source: '1', sink: '7', z: 10, minConf: 0.95 });
+expectNetwork('括號寫法 (i,j) 與逗號串接', '最短路徑，從 A 到 D。(A,B) 4, (A,C) 2, (C,B) 1, (B,D) 5, (C,D) 8', { type: 'shortest', source: 'A', sink: 'D', z: 8 });
+expectNetwork('減號寫法 1-2 與起點終點標示', '最短路徑\n起點：1\n終點：4\n1-2 3\n2-4 3\n1-3 1\n3-4 9', { type: 'shortest', source: '1', sink: '4', z: 6 });
+expectNetwork('中文節點與「到」', '求由台北到高雄的最短路線。\n台北到台中 170\n台中到高雄 190\n台北到台南 300\n台南到高雄 50', { type: 'shortest', source: '台北', sink: '高雄', z: 350 });
+expectNetwork('最大流量：單向容量', '最大流量 s → t\ns→a 3\ns→b 2\na→t 2\nb→t 3\na→b 1', { type: 'maxflow', source: 's', sink: 't', z: 5 });
+expectNetwork('轉運：句中寫供需', '轉運問題。工廠 供應 50，客戶 需求 50\n工廠→倉庫 2\n倉庫→客戶 3\n工廠→客戶 7', { type: 'transship', z: 250 });
+expectNetwork('沒寫題型時推測並提醒', '1→2 4\n2→3 5\n1→3 11', { type: 'shortest', z: 9, warn: ['推測'] });
+expectNetwork('沒寫起終點時提醒', '最短路徑\n1→2 4\n2→3 5\n1→3 11', { type: 'shortest', z: 9, warn: ['第一個節點'] });
+(function notNetwork() {
+  ['production', 'diet'].forEach((key) => check('一般題目不會被誤判成網路：' + key, P.parse(P.SAMPLE_TEXTS[key]).mode === 'natural'));
+  check('「至少需要」的「至」不是箭頭', P.parse('生產 A、B 兩種產品。每單位 A 的成本為 70 元，B 為 39 元。A 每單位需要 8 公斤原料，B 需要 4 公斤原料。原料至少需要 756 公斤，人力至少需要 436 小時。求最低成本。').mode === 'natural');
+  check('速記格式不會被誤判成網路', P.parse('max\n利潤 30 50\n人力 2 3 <= 120\n原料 1 2 <= 80').mode === 'shorthand');
 })();
 
 failures.forEach((line) => console.log(line));

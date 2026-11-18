@@ -667,17 +667,23 @@
       panel.classList.toggle('is-active', active);
       panel.hidden = !active;
     });
-    /* 目標規劃分頁有自己的結果面板：切換右側顯示哪一組 */
+    /* 目標規劃與網路模型分頁有自己的結果面板：切換右側顯示哪一組 */
     var goalMode = state.mode === 'goal';
+    var networkMode = state.mode === 'network';
     document.body.classList.toggle('mode-goal', goalMode);
+    document.body.classList.toggle('mode-network', networkMode);
     var goalResult = qs('#goal-result');
     if (goalResult) {
       goalResult.hidden = !goalMode;
     }
+    var networkResult = qs('#net-result');
+    if (networkResult) {
+      networkResult.hidden = !networkMode;
+    }
     ['#result-head', '.pane-result > .result-tabs', '#result-body'].forEach(function (selector) {
       var node = qs(selector);
       if (node) {
-        node.hidden = goalMode;
+        node.hidden = goalMode || networkMode;
       }
     });
   }
@@ -694,6 +700,22 @@
     if (mode === 'goal' && LPC.goalUI) {
       LPC.goalUI.init();
     }
+    if (mode === 'network' && LPC.networkUI) {
+      LPC.networkUI.init();
+    }
+  }
+
+  /** 由其他分頁（網路模型等）把建好的模型送進「自訂模型」並求解 */
+  function loadModel(model, label) {
+    state.model = model;
+    state.source = { kind: 'template', label: label || '外部模型' };
+    state.activeView = 'solution';
+    renderInputs();
+    renderSourceBanner();
+    solveNow();
+    switchMode('model');
+    activateView('solution');
+    toast('已套用到自訂模型');
   }
 
   /* --------------------------------------------------------------------- */
@@ -1619,16 +1641,31 @@
       preview +
       (result.model
         ? '<div class="step-actions" style="margin-top:16px">' +
-          '<button type="button" class="btn btn-primary" id="nl-apply">套用到模型並求解</button>' +
+          (result.network
+            ? '<button type="button" class="btn btn-primary" id="nl-open-network">在「網路模型」分頁開啟（含網路圖）</button>'
+            : '') +
+          '<button type="button" class="btn ' + (result.network ? 'btn-outline' : 'btn-primary') + '" id="nl-apply">套用到模型並求解</button>' +
           '<button type="button" class="btn btn-quiet" id="nl-copy">複製模型文字</button>' +
           '</div>' +
           '<p style="font-size:12px;color:var(--ink-3);margin-top:8px">' +
-          (result.mode === 'shorthand'
+          (result.mode === 'network'
+            ? '網路題型：每行一條弧線，例如「1→2 21」「(1,2) 21」「Ohio→Indiana 16」；雙向寫「1↔2 6/0」（正向／反向）。轉運問題再加「供應：…」「需求：…」兩行。'
+            : result.mode === 'shorthand'
             ? '速記格式：第一行為 max／min，第二行為「目標名稱 + 各變數係數」，其餘每行為「名稱 + 係數 + 關係符號 + 右端值」。'
             : '自然語言解析為規則式推論，僅抽取常見句型；若數值有誤，套用後可直接在左側表單修改。') +
           '</p>'
         : '');
 
+    var openNetwork = qs('#nl-open-network');
+    if (openNetwork) {
+      openNetwork.addEventListener('click', function () {
+        switchMode('network');
+        if (LPC.networkUI) {
+          LPC.networkUI.load(result.network);
+        }
+        toast('已在網路模型分頁開啟');
+      });
+    }
     var applyButton = qs('#nl-apply');
     if (applyButton) {
       applyButton.addEventListener('click', function () {
@@ -1671,6 +1708,10 @@
         event.preventDefault();
         if (state.mode === 'goal' && LPC.goalUI) {
           LPC.goalUI.solve(true);
+          return;
+        }
+        if (state.mode === 'network' && LPC.networkUI) {
+          LPC.networkUI.solve(true);
           return;
         }
         solveNow();
@@ -1721,7 +1762,9 @@
   LPC.app = {
     state: state,
     solveNow: solveNow,
-    renderInputs: renderInputs
+    renderInputs: renderInputs,
+    loadModel: loadModel,
+    switchMode: switchMode
   };
 
   /* 供「目標規劃」分頁（goalui.js）共用的小工具 */

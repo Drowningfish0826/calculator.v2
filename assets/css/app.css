@@ -2905,3 +2905,290 @@ body.mode-goal .mobile-bar {
     gap: 4px;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * 網路模型（轉運／最短路徑／最大流量）分頁
+ * ═══════════════════════════════════════════════════════════════════════ */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+body.mode-network .mobile-bar {
+  display: none;
+}
+
+.net-result .verdict-value {
+  display: block;
+  font-size: clamp(28px, 3vw, 40px);
+}
+
+.verdict-unit {
+  font-size: 0.42em;
+  font-family: var(--font-sans);
+  font-weight: 400;
+  color: var(--ink-3);
+  margin-left: 8px;
+}
+
+.net-type {
+  flex-wrap: wrap;
+}
+
+.net-type-hint {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.net-unit-field {
+  flex: 0 1 140px;
+}
+
+.net-endpoints {
+  margin-top: 4px;
+}
+
+.net-node-table td,
+.net-arc-table td {
+  vertical-align: middle;
+}
+
+.net-node-table .select,
+.net-arc-table .select {
+  width: 100%;
+  min-width: 84px;
+}
+
+.net-arc-table .input-num,
+.net-node-table .input-num {
+  width: 100%;
+  min-width: 64px;
+}
+
+.net-node-index {
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.net-arrow {
+  color: var(--ink-3);
+  text-align: center;
+  padding: 0 2px;
+}
+
+.net-model-size {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+/* 網路圖 */
+.net-figure {
+  margin: 0 0 18px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+  padding: 10px 10px 8px;
+}
+
+.net-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 520px;
+}
+
+.net-edge path {
+  fill: none;
+  stroke: var(--rule-strong);
+  stroke-width: 1.4;
+}
+
+.net-edge.is-on path {
+  stroke: var(--pruss);
+  stroke-width: 3;
+}
+
+.net-edge.is-cut path {
+  stroke: var(--crimson);
+  stroke-dasharray: 6 3;
+}
+
+.net-arrow-head {
+  fill: var(--rule-strong);
+}
+
+.net-arrow-head.is-on {
+  fill: var(--pruss);
+}
+
+.net-edge-label {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  fill: var(--ink-3);
+  paint-order: stroke;
+  stroke: var(--panel);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+
+.net-edge.is-on .net-edge-label {
+  fill: var(--pruss);
+  font-weight: 600;
+}
+
+.net-edge.is-cut .net-edge-label {
+  fill: var(--crimson);
+}
+
+.net-node circle {
+  fill: var(--panel);
+  stroke: var(--ink-2);
+  stroke-width: 1.6;
+}
+
+.net-node.net-role-supply circle {
+  fill: var(--jade-soft);
+  stroke: var(--jade);
+}
+
+.net-node.net-role-demand circle {
+  fill: var(--marker-soft);
+  stroke: var(--marker);
+}
+
+.net-node.is-source circle,
+.net-node.is-sink circle {
+  fill: var(--pruss-soft);
+  stroke: var(--pruss);
+  stroke-width: 2.4;
+}
+
+.net-node-label {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 600;
+  fill: var(--ink);
+}
+
+.net-node-caption {
+  font-family: var(--font-sans);
+  font-size: 11.5px;
+  fill: var(--ink-2);
+  paint-order: stroke;
+  stroke: var(--panel);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+
+.net-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  font-size: 12px;
+  color: var(--ink-3);
+  padding: 6px 4px 0;
+}
+
+.net-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.net-key {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 1.5px solid var(--ink-2);
+  background: var(--panel);
+}
+
+.net-key.net-role-supply {
+  background: var(--jade-soft);
+  border-color: var(--jade);
+}
+
+.net-key.net-role-demand {
+  background: var(--marker-soft);
+  border-color: var(--marker);
+}
+
+.net-key-line {
+  width: 22px;
+  height: 0;
+  border-top: 1.5px solid var(--rule-strong);
+}
+
+.net-key-line.is-on {
+  border-top: 3px solid var(--pruss);
+}
+
+.net-key-line.is-cut {
+  border-top: 2px dashed var(--crimson);
+}
+
+/* 最短路徑 */
+.net-path {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0 18px;
+}
+
+.net-path-node {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 17px;
+  background: var(--pruss-soft);
+  color: var(--pruss);
+  border: 1.5px solid var(--pruss);
+  font-weight: 600;
+}
+
+.net-path-arrow {
+  color: var(--ink-3);
+}
+
+.net-step-line {
+  font-family: var(--font-serif);
+  font-size: 14.5px;
+  line-height: 1.9;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.net-step-line b {
+  font-family: var(--font-sans);
+  font-weight: 600;
+}
+
+@media (max-width: 900px) {
+  .mode-switch {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .mode-switch button {
+    padding: 6px 8px;
+    font-size: 13px;
+  }
+
+  .net-unit-field {
+    flex: 1 1 140px;
+  }
+}
