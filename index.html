@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>線性規劃計算器 · 管理數學作業</title>
-<meta name="description" content="可直接在瀏覽器使用的線性規劃計算器：建立模型、精確求解、影子價格與敏感度分析、可行區域圖形、單純形法逐步教學。">
+<meta name="description" content="可直接在瀏覽器使用的線性規劃計算器：建立模型、精確求解、影子價格與敏感度分析、可行區域圖形、單純形法逐步教學，並支援多目標的目標規劃（Goal Programming）。">
 <link rel="stylesheet" href="assets/css/app.css">
 </head>
 <body>
@@ -29,6 +29,7 @@
     <button type="button" role="tab" id="tab-model" aria-controls="panel-model" aria-selected="true" data-mode="model">自訂模型</button>
     <button type="button" role="tab" id="tab-library" aria-controls="panel-library" aria-selected="false" data-mode="library">範本庫</button>
     <button type="button" role="tab" id="tab-text" aria-controls="panel-text" aria-selected="false" data-mode="text">文字建模</button>
+    <button type="button" role="tab" id="tab-goal" aria-controls="panel-goal" aria-selected="false" data-mode="goal">目標規劃</button>
   </nav>
 
   <div class="topbar-actions">
@@ -221,6 +222,9 @@
         <div id="nl-result"></div>
       </section>
     </div>
+
+    <!-- 模式四：目標規劃（多目標求解），內容由 goalui.js 產生 -->
+    <div class="panel" id="panel-goal" role="tabpanel" aria-labelledby="tab-goal" hidden></div>
   </section>
 
   <!-- ───────────── 右：結果 ───────────── -->
@@ -253,6 +257,29 @@
     </div>
 
     <div class="result-body" id="result-body" role="tabpanel" tabindex="-1" aria-live="polite"></div>
+
+    <!-- 目標規劃的結果（僅在「目標規劃」分頁顯示） -->
+    <div class="goal-result" id="goal-result" hidden>
+      <div class="result-head">
+        <div class="verdict">
+          <div class="verdict-label" id="goal-verdict-label">最滿意解</div>
+          <div class="verdict-value" id="goal-verdict-value">—</div>
+          <div class="verdict-sub" id="goal-verdict-sub"></div>
+        </div>
+        <div class="verdict-side">
+          <div class="solve-status" id="goal-solve-status" aria-live="polite"></div>
+          <div class="verdict-actions">
+            <button type="button" class="btn btn-primary" id="goal-btn-solve">求解</button>
+          </div>
+        </div>
+      </div>
+      <div class="result-tabs" id="goal-tabs" role="tablist" aria-label="目標規劃結果檢視">
+        <button type="button" role="tab" aria-selected="true" data-gview="solution" class="is-active">最滿意解</button>
+        <button type="button" role="tab" aria-selected="false" data-gview="steps">逐層求解</button>
+        <button type="button" role="tab" aria-selected="false" data-gview="model">完整模式</button>
+      </div>
+      <div class="result-body" id="goal-result-body" role="tabpanel" tabindex="-1" aria-live="polite"></div>
+    </div>
   </section>
 </main>
 
@@ -285,10 +312,12 @@
 <script src="assets/js/fraction.js"></script>
 <script src="assets/js/solver.js"></script>
 <script src="assets/js/model.js"></script>
+<script src="assets/js/goal.js"></script>
 <script src="assets/js/recipes.js"></script>
 <script src="assets/js/parser.js"></script>
 <script src="assets/js/graph.js"></script>
 <script src="assets/js/views.js"></script>
+<script src="assets/js/goalui.js"></script>
 <script src="assets/js/app.js"></script>
 </body>
 </html>
