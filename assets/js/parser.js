@@ -1617,9 +1617,347 @@
     return others.length >= 2 && numeric.length === others.length;
   }
 
+  /* --------------------------------------------------------------------- */
+  /* 網路題型：轉運、最短路徑、最大流量                                    */
+  /* --------------------------------------------------------------------- */
+
+  var ARC_NUM = '(\\d+(?:\\.\\d+)?)';
+  var ARC_TAIL = '\\s*(?:[:=]|的?(?:距離|成本|運費|容量|運量)?\\s*(?:為|是)?)?\\s*' + ARC_NUM + '(?:\\s*[\\/／]\\s*' + ARC_NUM + ')?\\s*(?:' + UNIT_SRC + '|萬元|千噸)?\\s*$';
+  var ARC_PATTERNS = [
+    { re: new RegExp('^[(（]?\\s*(.+?)\\s*(?:↔|<->|<=>|雙向)\\s*(.+?)\\s*[)）]?' + ARC_TAIL), both: true },
+    { re: new RegExp('^[(（]?\\s*(.+?)\\s*(?:→|->|=>|⇒|➜|至(?![少多於今])|到(?![達期]))\\s*(.+?)\\s*[)）]?' + ARC_TAIL), both: false },
+    { re: new RegExp('^[(（]\\s*([A-Za-z0-9\\u4e00-\\u9fa5]+)\\s*[,，、]\\s*([A-Za-z0-9\\u4e00-\\u9fa5]+)\\s*[)）]' + ARC_TAIL), both: false },
+    { re: new RegExp('^([A-Za-z0-9]+)\\s*[-–—]\\s*([A-Za-z0-9]+)' + ARC_TAIL), both: false }
+  ];
+  var NETWORK_TYPE_RE = {
+    shortest: /最短路徑|最短路線|最短距離|最短路|shortest\s*path/i,
+    maxflow: /最大流量|最大流|max(?:imal|imum)?\s*flow|最多可(?:運送|送|安排|飛)|每[日天]最多|最大運量/i,
+    transship: /轉運|transship|中繼站|加工廠|配銷中心|物流中心/i
+  };
+
+  function cleanNodeName(raw) {
+    return String(raw || '')
+      .replace(/^(?:由|從|自|節點|站|第)+/, '')
+      .replace(/(?:站|節點)$/, '')
+      .replace(/^\s+|\s+$/g, '');
+  }
+
+  function matchArc(chunk) {
+    var text = chunk.replace(/^\s*(?:弧線?|路線|航線|arc)\s*[:：]?\s*/i, '').trim();
+    for (var index = 0; index < ARC_PATTERNS.length; index += 1) {
+      var match = ARC_PATTERNS[index].re.exec(text);
+      if (!match) {
+        continue;
+      }
+      var from = cleanNodeName(match[1]);
+      var to = cleanNodeName(match[2]);
+      if (
+        !from || !to || from === to || /\d\s+\d/.test(from) || /[()（）。:：]/.test(from + to) ||
+        /需|為|是|可用|最多|最少|至少|至多|共有|總共|利潤|成本|每單位|求/.test(from + to) ||
+        from.length > 20 || to.length > 20
+      ) {
+        continue;
+      }
+      var both = ARC_PATTERNS[index].both;
+      return { from: from, to: to, value: match[3], reverse: match[4] !== undefined ? match[4] : both ? match[3] : '' };
+    }
+    return null;
+  }
+
+  /** 一行可能是一條弧線，也可能是「1→2 21，1→3 17」這樣用逗號串起來的多條 */
+  function arcsInLine(line) {
+    var whole = matchArc(line);
+    if (whole) {
+      return [whole];
+    }
+    if (line.length > 4000) {
+      return [];
+    }
+    var pieces = line.split(/[，,、;；](?![^()（）]*[)）])/);
+    if (pieces.length < 2) {
+      return [];
+    }
+    var found = [];
+    var misses = 0;
+    for (var index = 0; index < pieces.length; index += 1) {
+      if (!pieces[index].trim()) {
+        continue;
+      }
+      var arc = matchArc(pieces[index]);
+      if (arc) {
+        found.push(arc);
+      } else if (/\d/.test(pieces[index])) {
+        misses += 1;
+      }
+    }
+    /* 至少兩條弧線、且沒有其他夾帶數字的片段，才當成一串弧線 */
+    return found.length >= 2 && misses === 0 ? found : [];
+  }
+
+  function amountList(text) {
+    var items = [];
+    text.split(/[，,、;；]/).forEach(function (piece) {
+      var match = /^\s*(.+?)\s*[:=]?\s*(\d+(?:\.\d+)?)\s*(?:[一-龥]{0,3})?\s*$/.exec(piece);
+      if (match && cleanNodeName(match[1])) {
+        items.push({ name: cleanNodeName(match[1]), amount: match[2] });
+      }
+    });
+    return items;
+  }
+
+  function scanNetwork(rawText) {
+    var text = normalizeText(rawText);
+    var lines = text.split(/[\n。；;]/).map(function (line) {
+      return line.trim();
+    });
+    var arcs = [];
+    var supply = [];
+    var demand = [];
+    var unused = [];
+    lines.forEach(function (line) {
+      if (!line) {
+        return;
+      }
+      var listMatch = /^(供應量?|供給量?|supply|需求量?|demand)\s*[:]?\s*(.+)$/i.exec(line);
+      if (listMatch) {
+        var list = amountList(listMatch[2]);
+        if (list.length) {
+          (/供|supply/i.test(listMatch[1]) ? supply : demand).push.apply(/供|supply/i.test(listMatch[1]) ? supply : demand, list);
+          return;
+        }
+      }
+      var found = arcsInLine(line);
+      if (found.length) {
+        arcs.push.apply(arcs, found);
+        return;
+      }
+      /* 一句話裡的「Ohio 供應 72」「Virginia 需求 90」 */
+      var inline = false;
+      var nodePattern = /([A-Za-z][A-Za-z ]*[A-Za-z]|[A-Za-z0-9]+|[一-龥]{1,8}?)\s*(?:的)?(供應量?|供給量?|需求量?)\s*(?:為|是|:)?\s*(\d+(?:\.\d+)?)/g;
+      var match;
+      while ((match = nodePattern.exec(line)) !== null) {
+        inline = true;
+        (/供/.test(match[2]) ? supply : demand).push({ name: cleanNodeName(match[1]), amount: match[3] });
+      }
+      /* 題目敘述句（含「求」「單位」或題型關鍵字）不算漏掉的資料 */
+      var descriptive =
+        /求|試問|問|單位|如下|下列|例如|表示/.test(line) ||
+        NETWORK_TYPE_RE.shortest.test(line) || NETWORK_TYPE_RE.maxflow.test(line) || NETWORK_TYPE_RE.transship.test(line);
+      if (!inline && !descriptive && /\d/.test(line)) {
+        unused.push(line);
+      }
+    });
+    return { text: text, arcs: arcs, supply: supply, demand: demand, unused: unused };
+  }
+
+  function looksLikeNetwork(rawText) {
+    var scan = scanNetwork(rawText);
+    if (scan.arcs.length < 2) {
+      return false;
+    }
+    var keyword = NETWORK_TYPE_RE.shortest.test(scan.text) || NETWORK_TYPE_RE.maxflow.test(scan.text) || NETWORK_TYPE_RE.transship.test(scan.text);
+    return keyword || scan.arcs.length >= 3 || scan.supply.length + scan.demand.length > 0;
+  }
+
+  function parseNetwork(rawText) {
+    var NET = LPC.network;
+    var scan = scanNetwork(rawText);
+    var text = scan.text;
+    var findings = [];
+    var warnings = [];
+    if (!NET) {
+      return { ok: false, mode: 'network', model: null, findings: findings, warnings: ['網路模型模組未載入。'], confidence: 0 };
+    }
+
+    var type = null;
+    var typeExplicit = true;
+    if (scan.supply.length || scan.demand.length || NETWORK_TYPE_RE.transship.test(text)) {
+      type = 'transship';
+    }
+    if (NETWORK_TYPE_RE.shortest.test(text)) {
+      type = 'shortest';
+    } else if (NETWORK_TYPE_RE.maxflow.test(text)) {
+      type = 'maxflow';
+    }
+    if (scan.supply.length && scan.demand.length) {
+      type = 'transship';
+    }
+    if (!type) {
+      typeExplicit = false;
+      type = scan.arcs.some(function (arc) {
+        return arc.reverse !== '' && arc.reverse !== arc.value;
+      })
+        ? 'maxflow'
+        : 'shortest';
+      warnings.push('題目沒有寫明是最短路徑、最大流量或轉運問題，系統推測為「' + NET.TYPES[type].name + '」，可在網路模型分頁切換。');
+    }
+
+    var order = [];
+    function remember(name) {
+      if (name && order.indexOf(name) < 0) {
+        order.push(name);
+      }
+    }
+    scan.supply.forEach(function (item) {
+      remember(item.name);
+    });
+    scan.arcs.forEach(function (arc) {
+      remember(arc.from);
+      remember(arc.to);
+    });
+    scan.demand.forEach(function (item) {
+      remember(item.name);
+    });
+    /* 節點全是數字時依數字排序（1、2、…、7），比較好對照題目 */
+    if (type !== 'transship' && order.every(function (name) {
+      return /^\d+$/.test(name);
+    })) {
+      order.sort(function (left, right) {
+        return Number(left) - Number(right);
+      });
+    }
+
+    var amounts = {};
+    var roles = {};
+    scan.supply.forEach(function (item) {
+      roles[item.name] = 'supply';
+      amounts[item.name] = item.amount;
+    });
+    scan.demand.forEach(function (item) {
+      roles[item.name] = 'demand';
+      amounts[item.name] = item.amount;
+    });
+
+    var source = '';
+    var sink = '';
+    var endpointsExplicit = false;
+    if (type !== 'transship') {
+      var route = /(?:由|從|自)\s*(?:節點|第)?\s*([^\s，,。到至送]+?)\s*(?:站|節點)?\s*(?:送|運|走|飛)?\s*(?:到|至|往)\s*(?:節點|第)?\s*([^\s，,。]+)/.exec(text);
+      /** 「7站每日最多…」只取開頭符合的節點名稱（取最長者） */
+      var leadingNode = function (raw) {
+        var best = '';
+        order.forEach(function (name) {
+          if (raw.indexOf(name) === 0 && name.length > best.length) {
+            best = name;
+          }
+        });
+        return best;
+      };
+      if (route) {
+        route = [route[0], cleanNodeName(route[1]), leadingNode(cleanNodeName(route[2]))];
+      }
+      var labeled = /(?:起點|source)\s*[:：]?\s*(?:節點)?\s*([^\s，,。]+)/i.exec(text);
+      var labeledEnd = /(?:終點|sink)\s*[:：]?\s*(?:節點)?\s*([^\s，,。]+)/i.exec(text);
+      if (route && order.indexOf(route[1]) >= 0 && order.indexOf(route[2]) >= 0) {
+        source = route[1];
+        sink = route[2];
+        endpointsExplicit = true;
+      }
+      if (labeled && order.indexOf(cleanNodeName(labeled[1])) >= 0) {
+        source = cleanNodeName(labeled[1]);
+        endpointsExplicit = true;
+      }
+      if (labeledEnd && order.indexOf(cleanNodeName(labeledEnd[1])) >= 0) {
+        sink = cleanNodeName(labeledEnd[1]);
+      }
+      if (!source || !sink) {
+        source = source || order[0];
+        sink = sink || order[order.length - 1];
+        endpointsExplicit = false;
+        warnings.push('題目沒有寫出' + (type === 'shortest' ? '起點與終點' : 'Source 與 Sink') + '（例如「由節點1至節點7」），暫以第一個節點「' + source + '」到最後一個節點「' + sink + '」計算。');
+      }
+    }
+
+    var unitMatch = /單位\s*[:]\s*([^\s)）,，。]+)/.exec(text);
+    var spec = NET.create({
+      type: type,
+      unit: unitMatch ? unitMatch[1] : /公里/.test(text) && type === 'shortest' ? '公里' : '',
+      nodes: order.map(function (name) {
+        return { name: name, role: roles[name] || 'transship', amount: amounts[name] || '' };
+      }),
+      arcs: scan.arcs,
+      source: source,
+      sink: sink
+    });
+
+    var built = NET.buildModel(spec);
+    findings.push({
+      label: '問題類型',
+      value: NET.TYPES[type].name + '（' + NET.TYPES[type].en + '）' + (typeExplicit ? '' : '（推測）')
+    });
+    findings.push({ label: '節點', value: order.join('、') + '（共 ' + order.length + ' 個）' });
+    findings.push({ label: '弧線', value: scan.arcs.length + ' 條' + (scan.arcs.some(function (arc) {
+      return arc.reverse !== '';
+    }) ? '（含反向）' : '') });
+    if (type === 'transship') {
+      findings.push({
+        label: '供應點',
+        value: scan.supply.length ? scan.supply.map(function (item) {
+          return item.name + ' ' + item.amount;
+        }).join('、') : '？'
+      });
+      findings.push({
+        label: '需求點',
+        value: scan.demand.length ? scan.demand.map(function (item) {
+          return item.name + ' ' + item.amount;
+        }).join('、') : '？'
+      });
+      var middle = order.filter(function (name) {
+        return !roles[name];
+      });
+      if (middle.length) {
+        findings.push({ label: '轉運點', value: middle.join('、') });
+      }
+      if (!scan.supply.length || !scan.demand.length) {
+        warnings.push('轉運問題需要供應量與需求量，請加上「供應：Ohio 72, Pennsylvania 105」與「需求：Virginia 90, …」這樣的行。');
+      }
+    } else {
+      findings.push({ label: type === 'shortest' ? '起點 → 終點' : 'Source → Sink', value: source + ' → ' + sink });
+    }
+    if (built.ok) {
+      findings.push({ label: '建立的模型', value: built.model.varNames.length + ' 個變數、' + built.model.constraints.length + ' 條限制式' });
+    } else {
+      built.compiled.errors.forEach(function (error) {
+        warnings.push(error);
+      });
+    }
+    scan.unused.forEach(function (line) {
+      warnings.push('這一行沒有被轉成弧線或供需資料：「' + line + '」。弧線請寫成「1 → 2 21」或「(1,2) 21」。');
+    });
+
+    var confidence = 0;
+    if (built.ok) {
+      confidence = 1;
+      if (!typeExplicit) {
+        confidence -= 0.2;
+      }
+      if (type !== 'transship' && !endpointsExplicit) {
+        confidence -= 0.15;
+      }
+      confidence -= Math.min(0.3, scan.unused.length * 0.1);
+      confidence = Math.max(0.1, confidence);
+    }
+
+    return {
+      ok: built.ok,
+      mode: 'network',
+      model: built.ok ? built.model : null,
+      network: spec,
+      findings: findings,
+      warnings: warnings,
+      confidence: confidence
+    };
+  }
+
   function parse(rawText) {
     var text = String(rawText || '');
     var shorthandWarnings = [];
+    if (LPC.network && looksLikeNetwork(text)) {
+      var network = parseNetwork(text);
+      if (network.ok || network.network) {
+        return network;
+      }
+    }
     if (looksLikeShorthand(text)) {
       var shorthand = parseShorthand(text);
       if (shorthand.ok) {
@@ -1644,11 +1982,24 @@
     diet:
       '農場要調配 A、B 兩種飼料。每公斤 A 的成本為 30 元，每公斤 B 的成本為 20 元。' +
       '每公斤 A 含 3 單位蛋白質與 1 單位熱量，每公斤 B 含 1 單位蛋白質與 2 單位熱量。' +
-      '每日最少需要 18 單位蛋白質與 16 單位熱量，求最低成本的配方。'
+      '每日最少需要 18 單位蛋白質與 16 單位熱量，求最低成本的配方。',
+    shortest:
+      '求由節點1至節點7的最短路徑（單位：公里）。\n' +
+      '1→2 21\n1→3 17\n1→4 30\n2→4 10\n2→5 25\n3→4 12\n3→6 25\n4→5 18\n4→6 10\n4→7 9\n5→7 12\n6→7 15',
+    transship:
+      'Walsh 水果公司轉運問題，求最低運輸成本（單位：千噸）。\n' +
+      '供應：Ohio 72, Pennsylvania 105, New York 83\n' +
+      '需求：Virginia 90, Kentucky 80, Louisiana 120\n' +
+      'Ohio→Indiana 16, Ohio→Georgia 21\nPennsylvania→Indiana 18, Pennsylvania→Georgia 16\nNew York→Indiana 22, New York→Georgia 25\n' +
+      'Indiana→Virginia 23, Indiana→Kentucky 15, Indiana→Louisiana 29\nGeorgia→Virginia 20, Georgia→Kentucky 17, Georgia→Louisiana 24',
+    maxflow:
+      '由第1站送至第7站每日最多可運送多少包裹？（最大流量，單位：噸）兩個數字分別為正向／反向容量。\n' +
+      '1↔2 6/0\n1↔3 5/1\n2↔4 2/1\n2↔6 3/4\n3↔4 7/2\n3↔5 3/0\n3↔7 4/0\n4↔5 2/6\n4↔6 4/2\n5↔7 9/0\n6↔7 4/0'
   };
 
   LPC.parser = {
     parse: parse,
+    parseNetwork: parseNetwork,
     parseNatural: parseNatural,
     parseShorthand: parseShorthand,
     SAMPLE_TEXTS: SAMPLE_TEXTS

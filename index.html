@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>線性規劃計算器 · 管理數學作業</title>
-<meta name="description" content="可直接在瀏覽器使用的線性規劃計算器：建立模型、精確求解、影子價格與敏感度分析、可行區域圖形、單純形法逐步教學，並支援多目標的目標規劃（Goal Programming）。">
+<meta name="description" content="可直接在瀏覽器使用的線性規劃計算器：建立模型、精確求解、影子價格與敏感度分析、可行區域圖形、單純形法逐步教學，並支援多目標的目標規劃（Goal Programming）與網路模型（轉運、最短路徑、最大流量）。">
 <link rel="stylesheet" href="assets/css/app.css">
 </head>
 <body>
@@ -30,6 +30,7 @@
     <button type="button" role="tab" id="tab-library" aria-controls="panel-library" aria-selected="false" data-mode="library">範本庫</button>
     <button type="button" role="tab" id="tab-text" aria-controls="panel-text" aria-selected="false" data-mode="text">文字建模</button>
     <button type="button" role="tab" id="tab-goal" aria-controls="panel-goal" aria-selected="false" data-mode="goal">目標規劃</button>
+    <button type="button" role="tab" id="tab-network" aria-controls="panel-network" aria-selected="false" data-mode="network">網路模型</button>
   </nav>
 
   <div class="topbar-actions">
@@ -206,6 +207,9 @@
             <button type="button" class="chip" data-sample="production">生產組合</button>
             <button type="button" class="chip" data-sample="diet">飼料配方</button>
             <button type="button" class="chip" data-sample="shorthand">速記格式</button>
+            <button type="button" class="chip" data-sample="shortest">最短路徑</button>
+            <button type="button" class="chip" data-sample="maxflow">最大流量</button>
+            <button type="button" class="chip" data-sample="transship">轉運問題</button>
           </div>
           <div class="field-row">
             <button type="button" class="btn btn-primary" id="nl-parse">解析並建立模型</button>
@@ -225,6 +229,7 @@
 
     <!-- 模式四：目標規劃（多目標求解），內容由 goalui.js 產生 -->
     <div class="panel" id="panel-goal" role="tabpanel" aria-labelledby="tab-goal" hidden></div>
+    <div class="panel" id="panel-network" role="tabpanel" aria-labelledby="tab-network" hidden></div>
   </section>
 
   <!-- ───────────── 右：結果 ───────────── -->
@@ -280,6 +285,29 @@
       </div>
       <div class="result-body" id="goal-result-body" role="tabpanel" tabindex="-1" aria-live="polite"></div>
     </div>
+
+    <!-- 網路模型的結果（僅在「網路模型」分頁顯示） -->
+    <div class="goal-result net-result" id="net-result" hidden>
+      <div class="result-head">
+        <div class="verdict">
+          <div class="verdict-label" id="net-verdict-label">網路模型</div>
+          <div class="verdict-value" id="net-verdict-value">—</div>
+          <div class="verdict-sub" id="net-verdict-sub"></div>
+        </div>
+        <div class="verdict-side">
+          <div class="solve-status" id="net-solve-status" aria-live="polite"></div>
+          <div class="verdict-actions">
+            <button type="button" class="btn btn-primary" id="net-btn-solve">求解</button>
+          </div>
+        </div>
+      </div>
+      <div class="result-tabs" id="net-tabs" role="tablist" aria-label="網路模型結果檢視">
+        <button type="button" role="tab" aria-selected="true" data-nview="solution" class="is-active">結果與網路圖</button>
+        <button type="button" role="tab" aria-selected="false" data-nview="steps">建模步驟</button>
+        <button type="button" role="tab" aria-selected="false" data-nview="model">完整模型</button>
+      </div>
+      <div class="result-body" id="net-result-body" role="tabpanel" tabindex="-1" aria-live="polite"></div>
+    </div>
   </section>
 </main>
 
@@ -313,11 +341,13 @@
 <script src="assets/js/solver.js"></script>
 <script src="assets/js/model.js"></script>
 <script src="assets/js/goal.js"></script>
+<script src="assets/js/network.js"></script>
 <script src="assets/js/recipes.js"></script>
 <script src="assets/js/parser.js"></script>
 <script src="assets/js/graph.js"></script>
 <script src="assets/js/views.js"></script>
 <script src="assets/js/goalui.js"></script>
+<script src="assets/js/networkui.js"></script>
 <script src="assets/js/app.js"></script>
 </body>
 </html>
