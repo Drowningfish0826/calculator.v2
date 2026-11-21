@@ -105,6 +105,13 @@
     templateId: null,
     templateDraft: null,
     nlResult: null,
+    /* 文字建模的兩種解析結果：規則引擎（離線）與 AI（選用） */
+    nlResults: { rules: null, ai: null },
+    nlShown: 'rules',
+    nlText: '',
+    nlAiText: '',
+    nlAiError: '',
+    nlAiBusy: false,
     lastSolveMs: 0
   };
 
@@ -1591,13 +1598,175 @@
         toast('請先輸入問題描述', 'error');
         return;
       }
-      state.nlResult = LPC.parser.parse(text);
+      runRuleParse(text);
+      state.nlShown = 'rules';
       renderNlResult();
     });
+
+    qs('#nl-ai').addEventListener('click', function () {
+      runAiParse();
+    });
+    qs('#nl-ai-toggle').addEventListener('click', function () {
+      toggleAiSettings();
+    });
+    qs('#nl-ai-save').addEventListener('click', function () {
+      var settings = LPC.ai.saveSettings({
+        key: qs('#nl-ai-key').value,
+        model: qs('#nl-ai-model').value,
+        remember: qs('#nl-ai-remember').checked
+      });
+      toggleAiSettings(false);
+      renderAiStatus();
+      toast(settings.key ? 'AI 設定已儲存' : '已儲存（尚未填金鑰）');
+    });
+    qs('#nl-ai-clear').addEventListener('click', function () {
+      LPC.ai.clearSettings();
+      qs('#nl-ai-key').value = '';
+      qs('#nl-ai-remember').checked = false;
+      renderAiStatus();
+      toast('已清除金鑰');
+    });
+    renderAiStatus();
+  }
+
+  function runRuleParse(text) {
+    /* 題目改過後，舊的 AI 結果就不再對應，捨棄避免誤套用 */
+    if (state.nlResults.ai && state.nlAiText !== text) {
+      state.nlResults.ai = null;
+    }
+    state.nlText = text;
+    state.nlResults.rules = LPC.parser.parse(text);
+    state.nlAiError = '';
+  }
+
+  function toggleAiSettings(force) {
+    var box = qs('#nl-ai-settings');
+    var open = force === undefined ? box.hidden : force;
+    box.hidden = !open;
+    qs('#nl-ai-toggle').setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) {
+      var settings = LPC.ai.getSettings();
+      var select = qs('#nl-ai-model');
+      var models = LPC.ai.MODELS.slice();
+      if (!models.some(function (item) {
+        return item.id === settings.model;
+      })) {
+        models.push({ id: settings.model, name: settings.model, note: '自訂' });
+      }
+      select.innerHTML = models
+        .map(function (item) {
+          return '<option value="' + escapeHTML(item.id) + '"' + (item.id === settings.model ? ' selected' : '') + '>' +
+            escapeHTML(item.name + '　' + item.note) + '</option>';
+        })
+        .join('');
+      qs('#nl-ai-key').value = settings.key;
+      qs('#nl-ai-remember').checked = settings.remember;
+      qs('#nl-ai-key').focus();
+    }
+  }
+
+  function renderAiStatus() {
+    var status = qs('#nl-ai-status');
+    var button = qs('#nl-ai');
+    if (!status || !button) {
+      return;
+    }
+    if (state.nlAiBusy) {
+      button.disabled = true;
+      button.textContent = 'AI 解析中…';
+      status.textContent = '正在等待 Claude 回應（約 5～20 秒）';
+      return;
+    }
+    button.disabled = false;
+    button.textContent = 'AI 解析';
+    var settings = LPC.ai.getSettings();
+    status.textContent = LPC.ai.isConfigured()
+      ? 'AI 已設定：' + settings.model + '（金鑰 ' + LPC.ai.maskKey(settings.key) + '）'
+      : '解析結果可再回到「自訂模型」手動調整';
+  }
+
+  function runAiParse() {
+    var text = qs('#nl-input').value;
+    if (state.nlAiBusy) {
+      return;
+    }
+    if (!text.trim()) {
+      toast('請先輸入問題描述', 'error');
+      return;
+    }
+    if (!LPC.ai.isConfigured()) {
+      toggleAiSettings(true);
+      toast('請先貼上 API 金鑰', 'error');
+      return;
+    }
+    if (!state.nlResults.rules || state.nlText !== text) {
+      runRuleParse(text);
+    }
+    state.nlAiBusy = true;
+    state.nlAiError = '';
+    renderAiStatus();
+    renderNlResult();
+    LPC.ai
+      .parse(text)
+      .then(function (result) {
+        state.nlResults.ai = result;
+        state.nlAiText = text;
+        state.nlShown = 'ai';
+        toast(result.ok ? 'AI 解析完成' : 'AI 回傳的模型未通過檢查', result.ok ? undefined : 'error');
+      })
+      .catch(function (error) {
+        state.nlAiError = error && error.message ? error.message : 'AI 解析失敗';
+        toast('AI 解析失敗', 'error');
+      })
+      .then(function () {
+        state.nlAiBusy = false;
+        renderAiStatus();
+        renderNlResult();
+      });
+  }
+
+  function confidenceText(result) {
+    return Math.round(((result && result.confidence) || 0) * 100) + '%';
+  }
+
+  function renderNlCompare() {
+    var rules = state.nlResults.rules;
+    var aiResult = state.nlResults.ai;
+    var parts = [];
+    if (state.nlAiBusy) {
+      parts.push('<div class="callout ai-busy"><span class="ai-spinner" aria-hidden="true"></span>AI 解析中，完成後會自動顯示，可與規則解析切換比較。</div>');
+    }
+    if (state.nlAiError) {
+      parts.push('<div class="callout is-error"><div class="callout-title">AI 解析失敗</div>' + escapeHTML(state.nlAiError) +
+        '<div class="ai-error-note">下方仍是離線規則引擎的結果。</div></div>');
+    }
+    if (rules && aiResult) {
+      var same = rules.model && aiResult.model && LPC.ai.sameModel(rules.model, aiResult.model);
+      parts.push(
+        '<div class="nl-compare">' +
+        '<div class="segmented" role="radiogroup" aria-label="切換解析結果">' +
+        '<button type="button" role="radio" data-nl-show="rules" aria-checked="' + (state.nlShown === 'rules') + '">規則解析 ' + confidenceText(rules) + '</button>' +
+        '<button type="button" role="radio" data-nl-show="ai" aria-checked="' + (state.nlShown === 'ai') + '">AI 解析 ' + confidenceText(aiResult) + '</button>' +
+        '</div>' +
+        '<span class="nl-compare-note' + (same ? ' is-same' : '') + '">' +
+        (same ? '✓ 兩種解析得到完全相同的模型' : !rules.model || !aiResult.model ? '其中一種解析沒有產生模型' : '兩種解析的模型不同，請切換比較後再套用') +
+        '</span></div>'
+      );
+    } else if (rules && !aiResult && !state.nlAiBusy && rules.mode !== 'shorthand' && (rules.confidence || 0) < 0.8) {
+      parts.push(
+        '<div class="callout ai-hint"><div class="callout-title">規則引擎沒什麼把握</div>' +
+        '這類題目可以試試「AI 解析」，由 Claude 讀懂題目後再交給本機求解器計算。' +
+        '<div class="step-actions"><button type="button" class="btn btn-outline btn-small" data-nl-ai-run>' +
+        (LPC.ai.isConfigured() ? '改用 AI 解析' : '設定 AI 解析') + '</button></div></div>'
+      );
+    }
+    return parts.join('');
   }
 
   function renderNlResult() {
     var section = qs('#nl-result-section');
+    var shown = state.nlResults[state.nlShown] || state.nlResults.rules || state.nlResults.ai;
+    state.nlResult = shown;
     if (!state.nlResult) {
       section.hidden = true;
       return;
@@ -1636,6 +1805,7 @@
       : '';
 
     qs('#nl-result').innerHTML =
+      renderNlCompare() +
       '<div class="parse-findings">' + findings + '</div>' +
       warnings +
       preview +
@@ -1650,12 +1820,26 @@
           '<p style="font-size:12px;color:var(--ink-3);margin-top:8px">' +
           (result.mode === 'network'
             ? '網路題型：每行一條弧線，例如「1→2 21」「(1,2) 21」「Ohio→Indiana 16」；雙向寫「1↔2 6/0」（正向／反向）。轉運問題再加「供應：…」「需求：…」兩行。'
+            : result.mode === 'ai'
+            ? 'AI 解析：Claude 只負責把題目轉成模型，數值仍由本機的精確求解器計算。AI 可能誤解題意，套用前請核對上面的限制式。'
             : result.mode === 'shorthand'
             ? '速記格式：第一行為 max／min，第二行為「目標名稱 + 各變數係數」，其餘每行為「名稱 + 係數 + 關係符號 + 右端值」。'
             : '自然語言解析為規則式推論，僅抽取常見句型；若數值有誤，套用後可直接在左側表單修改。') +
           '</p>'
         : '');
 
+    qsa('#nl-result [data-nl-show]').forEach(function (button) {
+      button.addEventListener('click', function () {
+        state.nlShown = button.getAttribute('data-nl-show');
+        renderNlResult();
+      });
+    });
+    var aiRun = qs('#nl-result [data-nl-ai-run]');
+    if (aiRun) {
+      aiRun.addEventListener('click', function () {
+        runAiParse();
+      });
+    }
     var openNetwork = qs('#nl-open-network');
     if (openNetwork) {
       openNetwork.addEventListener('click', function () {
@@ -1670,7 +1854,7 @@
     if (applyButton) {
       applyButton.addEventListener('click', function () {
         state.model = result.model;
-        state.source = { kind: 'text', label: '文字建模解析結果' };
+        state.source = { kind: 'text', label: result.mode === 'ai' ? '文字建模（AI 解析）' : '文字建模解析結果' };
         renderInputs();
         renderSourceBanner();
         solveNow();

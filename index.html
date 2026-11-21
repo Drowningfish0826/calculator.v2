@@ -211,9 +211,32 @@
             <button type="button" class="chip" data-sample="maxflow">最大流量</button>
             <button type="button" class="chip" data-sample="transship">轉運問題</button>
           </div>
-          <div class="field-row">
+          <div class="field-row nl-actions">
             <button type="button" class="btn btn-primary" id="nl-parse">解析並建立模型</button>
-            <span class="field-note">解析結果可再回到「自訂模型」手動調整</span>
+            <button type="button" class="btn btn-outline" id="nl-ai">AI 解析</button>
+            <button type="button" class="btn btn-quiet" id="nl-ai-toggle" aria-expanded="false" aria-controls="nl-ai-settings">AI 設定</button>
+            <span class="field-note" id="nl-ai-status">解析結果可再回到「自訂模型」手動調整</span>
+          </div>
+          <div class="ai-settings" id="nl-ai-settings" hidden>
+            <div class="ai-settings-title">AI 解析設定（選用）</div>
+            <p class="ai-settings-note">
+              「解析並建立模型」使用離線規則引擎，不需要網路。「AI 解析」會把題目文字送到 Anthropic 的 Claude 模型轉成模型，
+              再由本機的精確求解器計算，需要你自己的 API 金鑰（可在
+              <a href="https://console.anthropic.com/" target="_blank" rel="noopener">Claude Console</a> 申請，依用量計費）。
+            </p>
+            <div class="field-row">
+              <label class="field"><span class="field-label">API 金鑰</span>
+                <input type="password" class="input" id="nl-ai-key" placeholder="sk-ant-..." autocomplete="off" spellcheck="false"></label>
+              <label class="field ai-model-field"><span class="field-label">模型</span>
+                <select class="select" id="nl-ai-model"></select></label>
+            </div>
+            <label class="checkbox ai-remember"><input type="checkbox" id="nl-ai-remember">
+              <span>記住金鑰（存在這台電腦的瀏覽器；不勾選則關閉分頁後清除）</span></label>
+            <p class="ai-settings-note is-warn">金鑰只會存在你自己的瀏覽器並直接送到 Anthropic，不會上傳到 GitHub。請勿在公用電腦勾選「記住金鑰」。</p>
+            <div class="step-actions">
+              <button type="button" class="btn btn-primary btn-small" id="nl-ai-save">儲存設定</button>
+              <button type="button" class="btn btn-quiet btn-small" id="nl-ai-clear">清除金鑰</button>
+            </div>
           </div>
         </div>
       </section>
@@ -344,6 +367,7 @@
 <script src="assets/js/network.js"></script>
 <script src="assets/js/recipes.js"></script>
 <script src="assets/js/parser.js"></script>
+<script src="assets/js/ai.js"></script>
 <script src="assets/js/graph.js"></script>
 <script src="assets/js/views.js"></script>
 <script src="assets/js/goalui.js"></script>

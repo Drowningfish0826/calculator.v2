@@ -3192,3 +3192,112 @@ body.mode-network .mobile-bar {
     flex: 1 1 140px;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * 文字建模：AI 解析（選用）
+ * ═══════════════════════════════════════════════════════════════════════ */
+.nl-actions {
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.ai-settings {
+  margin-top: 14px;
+  padding: 16px 18px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ai-settings-title {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.ai-settings-note {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--ink-2);
+}
+
+.ai-settings-note.is-warn {
+  color: var(--ink-3);
+  font-size: 12px;
+}
+
+.ai-model-field {
+  flex: 0 1 260px;
+}
+
+.ai-remember {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.ai-remember input {
+  margin-top: 3px;
+}
+
+.nl-compare {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  margin-bottom: 16px;
+}
+
+.nl-compare-note {
+  font-size: 13px;
+  color: var(--marker);
+}
+
+.nl-compare-note.is-same {
+  color: var(--jade);
+}
+
+.ai-busy {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ai-spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--rule-strong);
+  border-top-color: var(--pruss);
+  animation: ai-spin 0.8s linear infinite;
+  flex: none;
+}
+
+@keyframes ai-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-spinner {
+    animation: none;
+  }
+}
+
+.ai-error-note {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+.ai-hint .step-actions {
+  margin-top: 10px;
+}
