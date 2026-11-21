@@ -192,7 +192,7 @@
     <div class="panel" id="panel-text" role="tabpanel" aria-labelledby="tab-text" hidden>
       <section class="step">
         <header class="step-head">
-          <span class="step-index">C</span>
+          <span class="step-index">01</span>
           <h2 class="step-title">用一段話描述問題</h2>
           <span class="step-hint">離線規則引擎會抽取產品、利潤、資源與上限</span>
         </header>
@@ -211,19 +211,38 @@
             <button type="button" class="chip" data-sample="maxflow">最大流量</button>
             <button type="button" class="chip" data-sample="transship">轉運問題</button>
           </div>
-          <div class="field-row">
+          <div class="field-row nl-actions">
             <button type="button" class="btn btn-primary" id="nl-parse">解析並建立模型</button>
-            <span class="field-note">解析結果可再回到「自訂模型」手動調整</span>
+            <button type="button" class="btn btn-outline" id="nl-ai">AI 解析</button>
+            <button type="button" class="btn btn-quiet" id="nl-ai-toggle" aria-expanded="false" aria-controls="nl-ai-settings">AI 設定</button>
+            <span class="field-note" id="nl-ai-status">解析結果可再回到「自訂模型」手動調整</span>
+          </div>
+          <div class="ai-settings" id="nl-ai-settings" hidden>
+            <div class="ai-settings-title">AI 解析設定（選用）</div>
+            <p class="ai-settings-note">
+              「解析並建立模型」使用離線規則引擎，不需要網路。「AI 解析」會把題目文字送到你選的 AI 服務轉成模型，
+              再由本機的精確求解器計算，需要你自己的 API 金鑰。
+            </p>
+            <div class="field-row">
+              <label class="field ai-provider-field"><span class="field-label">AI 服務</span>
+                <select class="select" id="nl-ai-provider"></select></label>
+              <label class="field ai-model-field"><span class="field-label">模型</span>
+                <select class="select" id="nl-ai-model"></select></label>
+            </div>
+            <div class="field-row">
+              <label class="field"><span class="field-label">API 金鑰</span>
+                <input type="password" class="input" id="nl-ai-key" placeholder="AIza..." autocomplete="off" spellcheck="false"></label>
+            </div>
+            <p class="ai-settings-note" id="nl-ai-provider-note"></p>
+            <label class="checkbox ai-remember"><input type="checkbox" id="nl-ai-remember">
+              <span>記住金鑰（存在這台電腦的瀏覽器；不勾選則關閉分頁後清除）</span></label>
+            <p class="ai-settings-note is-warn">金鑰只會存在你自己的瀏覽器，並直接送到你選的 AI 服務，不會上傳到 GitHub。請勿在公用電腦勾選「記住金鑰」。</p>
+            <div class="step-actions">
+              <button type="button" class="btn btn-primary btn-small" id="nl-ai-save">儲存設定</button>
+              <button type="button" class="btn btn-quiet btn-small" id="nl-ai-clear">清除金鑰</button>
+            </div>
           </div>
         </div>
-      </section>
-      <section class="step step-last" id="nl-result-section" hidden>
-        <header class="step-head">
-          <span class="step-index">D</span>
-          <h2 class="step-title">解析結果</h2>
-          <span class="step-hint" id="nl-confidence"></span>
-        </header>
-        <div id="nl-result"></div>
       </section>
     </div>
 
@@ -286,6 +305,32 @@
       <div class="result-body" id="goal-result-body" role="tabpanel" tabindex="-1" aria-live="polite"></div>
     </div>
 
+    <!-- 文字建模的解析結果（僅在「文字建模」分頁顯示） -->
+    <div class="goal-result nl-pane" id="nl-pane" hidden>
+      <div class="result-head nl-pane-head">
+        <div class="verdict">
+          <div class="verdict-label">文字建模</div>
+          <div class="verdict-value nl-pane-title" id="nl-pane-title">尚未解析</div>
+          <div class="verdict-sub" id="nl-confidence"></div>
+        </div>
+      </div>
+      <div class="result-body" id="nl-pane-body" tabindex="-1" aria-live="polite">
+        <div class="nl-empty" id="nl-empty">
+          <h3 class="nl-empty-title">這裡會顯示解析結果</h3>
+          <ol class="nl-empty-steps">
+            <li><b>輸入題目</b>：在左邊貼上題目文字，或點一個「範例文字」。</li>
+            <li><b>解析</b>：按「解析並建立模型」（離線、免費）。規則引擎沒把握時，可再按「AI 解析」。</li>
+            <li><b>檢查</b>：核對這裡列出的目標係數與每條限制式，數字不對可以之後在表單修改。</li>
+            <li><b>套用並求解</b>：按「套用到模型並求解」，會切到「自訂模型」分頁，顯示最佳解、敏感度分析與圖形。</li>
+          </ol>
+          <p class="nl-empty-note">在「自訂模型」與「範本庫」分頁，右邊顯示的是目前模型的求解結果；在這個分頁，題目要先解析、再套用，才會被求解。</p>
+        </div>
+        <section class="nl-result-section" id="nl-result-section" hidden>
+          <div id="nl-result"></div>
+        </section>
+      </div>
+    </div>
+
     <!-- 網路模型的結果（僅在「網路模型」分頁顯示） -->
     <div class="goal-result net-result" id="net-result" hidden>
       <div class="result-head">
@@ -344,6 +389,7 @@
 <script src="assets/js/network.js"></script>
 <script src="assets/js/recipes.js"></script>
 <script src="assets/js/parser.js"></script>
+<script src="assets/js/ai.js"></script>
 <script src="assets/js/graph.js"></script>
 <script src="assets/js/views.js"></script>
 <script src="assets/js/goalui.js"></script>
