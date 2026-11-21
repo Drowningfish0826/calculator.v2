@@ -282,6 +282,38 @@ async function run() {
   check('提示詞要求沒有缺資訊時給空陣列', /不要寫「無」/.test(systemText));
   check('提示詞要求不使用 LaTeX', /LaTeX/.test(systemText));
 
+  /* 6d. 實測：Gemini Flash-Lite 回傳的網路模型漏了題型 */
+  const DRINK_NODES = [
+    { name: '台中廠', role: 'supply', amount: 150 }, { name: '高雄廠', role: 'supply', amount: 200 },
+    { name: '新竹倉', role: 'transship' }, { name: '台南倉', role: 'transship' },
+    { name: '台北', role: 'demand', amount: 120 }, { name: '宜蘭', role: 'demand', amount: 60 }, { name: '屏東', role: 'demand', amount: 100 }
+  ];
+  const DRINK_ARCS = [
+    ['台中廠', '新竹倉', 8], ['台中廠', '台南倉', 6], ['高雄廠', '新竹倉', 12], ['高雄廠', '台南倉', 3], ['高雄廠', '屏東', 4],
+    ['新竹倉', '台北', 4], ['新竹倉', '宜蘭', 7], ['台南倉', '台北', 11], ['台南倉', '宜蘭', 14], ['台南倉', '屏東', 3]
+  ].map(([from, to, value]) => ({ from, to, value })).concat([{ from: '新竹倉', to: '台南倉', value: 5, reverse: 5 }]);
+  const drink = (network, extra) => Object.assign({ kind: 'network', network, variables: [], objective: [], constraints: [], assumptions: [], questions: [], confidence: 0.9 }, extra || {});
+  const drinkCase = async (title, input, expectWarn) => {
+    const r = await AI.parse('x', { settings: GEMINI, fetch: fakeFetch(200, geminiReply(input)) });
+    check(title + '：可以套用', r.ok && r.network && r.network.type === 'transship', JSON.stringify(r.warnings));
+    if (r.ok) check(title + '：最低運費 2740', Number(N.solve(r.network).z) === 2740, String(N.solve(r.network).z));
+    if (expectWarn) check(title + '：提醒是推測的題型', r.warnings.some((w) => /推測為「轉運問題」/.test(w)), r.warnings.join('|'));
+    check(title + '：保留 AI 原始回應', !!r.raw);
+  };
+  await drinkCase('網路題型漏填', drink({ nodes: DRINK_NODES, arcs: DRINK_ARCS }), true);
+  await drinkCase('題型寫成 transshipment', drink({ type: 'transshipment', nodes: DRINK_NODES, arcs: DRINK_ARCS }), false);
+  await drinkCase('題型寫成中文', drink({ type: '轉運問題', nodes: DRINK_NODES, arcs: DRINK_ARCS }), false);
+  await drinkCase('節點與弧線放在最外層', drink(undefined, { nodes: DRINK_NODES, arcs: DRINK_ARCS, network_type: 'transship' }), false);
+  await drinkCase('network 包成 JSON 字串', drink(JSON.stringify({ type: 'transship', nodes: DRINK_NODES, arcs: DRINK_ARCS })), false);
+  const synonymNodes = DRINK_NODES.map((node) => Object.assign({}, node, { role: { supply: 'factory', transship: 'warehouse', demand: 'customer' }[node.role] }));
+  await drinkCase('角色寫成 factory／warehouse／customer', drink({ type: 'transship', nodes: synonymNodes, arcs: DRINK_ARCS }), false);
+  const emptyNet = await AI.parse('x', { settings: GEMINI, fetch: fakeFetch(200, geminiReply(drink({ type: 'transship', nodes: [], arcs: [] }))) });
+  check('沒有節點時清楚說明', !emptyNet.ok && /缺少節點或弧線/.test(emptyNet.warnings.join('')), emptyNet.warnings.join('|'));
+  check('失敗時也保留原始回應', !!emptyNet.raw);
+  const shortestGuess = await AI.parse('x', { settings: GEMINI, fetch: fakeFetch(200, geminiReply(drink({ nodes: SHORTEST.network.nodes, arcs: SHORTEST.network.arcs, source: '1', sink: '7' }))) });
+  check('沒題型、沒供需 → 推測最短路徑', shortestGuess.ok && shortestGuess.network.type === 'shortest' && Number(N.solve(shortestGuess.network).z) === 38, shortestGuess.warnings.join('|'));
+  check('回傳格式要求 network.type 必填', JSON.stringify(AI.TOOL.input_schema.properties.network.required) === '["type","nodes","arcs"]');
+
   /* 7. 設定 */
   AI.saveSettings({ provider: 'claude', key: '  sk-ant-abc1234567890xyz  ', model: 'claude-sonnet-5-5', remember: false });
   check('設定：去除空白並保存', AI.getSettings().key === 'sk-ant-abc1234567890xyz' && AI.getSettings().model === 'claude-sonnet-5-5');

@@ -408,6 +408,14 @@ expectNetwork('沒寫起終點時提醒', '最短路徑\n1→2 4\n2→3 5\n1→3
   check('速記格式不會被誤判成網路', P.parse('max\n利潤 30 50\n人力 2 3 <= 120\n原料 1 2 <= 80').mode === 'shorthand');
 })();
 
+(function proseNetwork() {
+  const text = '某飲料公司有台中廠與高雄廠兩座工廠，台中廠每週最多可供應 150 箱，高雄廠最多 200 箱。貨物通常先送到新竹倉或台南倉兩個物流中心，再配送給台北、宜蘭、屏東三個客戶，每週需求分別為 120 箱、60 箱、100 箱。每箱運費如下：台中廠到新竹倉 8 元、到台南倉 6 元；高雄廠到新竹倉 12 元、到台南倉 3 元。';
+  const r = P.parse(text);
+  check('敘述型網路題：規則引擎誠實回報失敗', r.ok === false && r.confidence === 0);
+  check('敘述型網路題：不列出亂抓的節點名稱', !(r.findings || []).some((f) => /每週最多可/.test(String(f.value))), JSON.stringify(r.findings));
+  check('敘述型網路題：建議改用 AI 解析', r.warnings.some((w) => /AI 解析/.test(w)));
+})();
+
 failures.forEach((line) => console.log(line));
 console.log('\n文字建模檢測：通過 ' + passed + ' 項，失敗 ' + failed + ' 項');
 process.exit(failed ? 1 : 0);

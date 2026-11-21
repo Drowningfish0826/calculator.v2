@@ -1332,13 +1332,24 @@
       confidence = 0;
     }
 
+    var success = constraints.length > 0 && confidence > 0;
+    if (!success) {
+      /* 讀不懂時不要列出一長串可能是亂抓的名稱，只保留關鍵原因並建議 AI 解析 */
+      var noisy = /的單位(?:利潤|成本)，暫以 0 代入|沒有出現在任何限制式中|只找到部分產品的耗用量|沒有對應到任何產品|找不到「.*」的可用量上限/;
+      warnings = ['規則引擎無法從這段文字建立完整的模型。題目若是一般敘述句或比較複雜，建議改用「AI 解析」。'].concat(
+        warnings.filter(function (warning) {
+          return !noisy.test(warning);
+        }).slice(0, 3)
+      );
+      findings = [{ label: '狀態', value: '規則引擎無法理解這段題目' }];
+    }
     return {
-      ok: constraints.length > 0 && confidence > 0,
+      ok: success,
       mode: 'natural',
-      model: built,
+      model: success ? built : null,
       findings: findings,
       warnings: warnings,
-      confidence: confidence
+      confidence: success ? confidence : 0
     };
   }
 
@@ -1737,7 +1748,10 @@
       var match;
       while ((match = nodePattern.exec(line)) !== null) {
         inline = true;
-        (/供/.test(match[2]) ? supply : demand).push({ name: cleanNodeName(match[1]), amount: match[3] });
+        var inlineName = cleanNodeName(match[1]).replace(/(?:每週|每周|每月|每天|每日|最多|最少|至多|至少|可以|可|能|共|總共)+$/, '');
+        if (inlineName) {
+          (/供/.test(match[2]) ? supply : demand).push({ name: inlineName, amount: match[3] });
+        }
       }
       /* 題目敘述句（含「求」「單位」或題型關鍵字）不算漏掉的資料 */
       var descriptive =
@@ -1881,6 +1895,16 @@
     });
 
     var built = NET.buildModel(spec);
+    if (!built.ok) {
+      /* 規則引擎讀不懂時，不列出可能是亂抓的節點名稱，只說明原因 */
+      findings.push({ label: '問題類型', value: NET.TYPES[type].name + '（' + NET.TYPES[type].en + '）' + (typeExplicit ? '' : '（推測）') });
+      findings.push({ label: '狀態', value: '規則引擎無法從這段敘述建立網路模型' });
+      warnings.push('規則引擎只認得「每行一條弧線」的寫法（例如「台中廠→新竹倉 8」），並需要「供應：…」「需求：…」兩行；一般敘述句建議改用「AI 解析」。');
+      built.compiled.errors.forEach(function (error) {
+        warnings.push(error);
+      });
+      return { ok: false, mode: 'network', model: null, network: spec, findings: findings, warnings: warnings, confidence: 0 };
+    }
     findings.push({
       label: '問題類型',
       value: NET.TYPES[type].name + '（' + NET.TYPES[type].en + '）' + (typeExplicit ? '' : '（推測）')
@@ -1968,6 +1992,13 @@
       });
     }
     var natural = parseNatural(text);
+    /* 一般解析失敗、但題目像網路題（轉運、物流中心、最短路徑…）時，改回報網路題型的說明 */
+    if (!natural.ok && LPC.network && (NETWORK_TYPE_RE.shortest.test(text) || NETWORK_TYPE_RE.maxflow.test(text) || NETWORK_TYPE_RE.transship.test(text))) {
+      var asNetwork = parseNetwork(text);
+      if (asNetwork.network) {
+        return asNetwork;
+      }
+    }
     if (!natural.ok && shorthandWarnings.length) {
       natural.warnings = shorthandWarnings.concat(natural.warnings || []);
     }

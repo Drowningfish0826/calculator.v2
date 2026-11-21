@@ -203,7 +203,9 @@
     '- 題目要求整數或不可分割 → integer = true；「是否選擇／投資」這類決策 → binary = true。',
     '',
     '網路模型（kind = "network"，填 network 欄位，variables／objective／constraints 留空陣列）：',
-    '- type：轉運問題 "transship"、最短路徑 "shortest"、最大流量 "maxflow"。',
+    '- network.type 一定要填：轉運問題 "transship"、最短路徑 "shortest"、最大流量 "maxflow"。',
+    '- 每條弧線只寫一次起點與終點的節點名稱（例如「台中廠」「新竹倉」），名稱要與 nodes 完全一致。',
+    '- 轉運問題中，工廠或產地是 supply、倉庫或物流中心是 transship、客戶或市場是 demand；供過於求或供不應求都照實填數量。',
     '- 轉運問題的 nodes 要標 role（supply／transship／demand）與 amount（供應量或需求量）。',
     '- 最短路徑與最大流量要填 source 與 sink（節點名稱）。',
     '- arcs 的 value 為成本、距離或容量；反方向也能走時把反向數值填在 reverse，只能單向時不要填 reverse。',
@@ -290,7 +292,8 @@
             },
             source: { type: 'string' },
             sink: { type: 'string' }
-          }
+          },
+          required: ['type', 'nodes', 'arcs']
         },
         assumptions: { type: 'array', items: { type: 'string' } },
         questions: { type: 'array', items: { type: 'string' } },
@@ -740,22 +743,103 @@
     return { model: built };
   }
 
+  var TYPE_SYNONYMS = [
+    { type: 'transship', re: /transship|轉運|中繼|配送|運輸|transport|distribution/i },
+    { type: 'shortest', re: /short|最短|路徑|路線|path|route/i },
+    { type: 'maxflow', re: /max.?flow|maximal|maximum|最大流|流量|flow|容量/i }
+  ];
+  var ROLE_SYNONYMS = [
+    { role: 'supply', re: /^(?:supply|supplier|source|origin|plant|factory|供應|供給|供應點|產地|工廠|來源)/i },
+    { role: 'demand', re: /^(?:demand|customer|destination|sink|market|需求|需求點|客戶|市場|目的地)/i },
+    { role: 'transship', re: /^(?:transship|transshipment|warehouse|hub|depot|intermediate|轉運|轉運點|倉|物流|中繼|中間)/i }
+  ];
+
+  function normalizeType(value) {
+    var text = String(value || '').trim();
+    var NET = LPC.network;
+    if (NET.TYPES[text]) {
+      return text;
+    }
+    for (var index = 0; index < TYPE_SYNONYMS.length; index += 1) {
+      if (TYPE_SYNONYMS[index].re.test(text)) {
+        return TYPE_SYNONYMS[index].type;
+      }
+    }
+    return '';
+  }
+
+  function normalizeRole(value) {
+    var text = String(value || '').trim();
+    if (text === 'supply' || text === 'demand' || text === 'transship') {
+      return text;
+    }
+    for (var index = 0; index < ROLE_SYNONYMS.length; index += 1) {
+      if (ROLE_SYNONYMS[index].re.test(text)) {
+        return ROLE_SYNONYMS[index].role;
+      }
+    }
+    return 'transship';
+  }
+
+  /** 找出網路資料：正常在 input.network，也接受 AI 放在最外層或包成 JSON 字串 */
+  function networkPart(input) {
+    var raw = input.network;
+    if (typeof raw === 'string') {
+      try {
+        raw = JSON.parse(raw);
+      } catch (error) {
+        raw = null;
+      }
+    }
+    if (!raw || typeof raw !== 'object') {
+      raw = {};
+    }
+    var merged = {};
+    ['type', 'unit', 'nodes', 'arcs', 'source', 'sink'].forEach(function (key) {
+      merged[key] = raw[key] !== undefined ? raw[key] : input[key === 'type' ? 'network_type' : key];
+    });
+    if (merged.type === undefined && raw.network_type !== undefined) {
+      merged.type = raw.network_type;
+    }
+    return merged;
+  }
+
   function convertNetwork(input, errors, warnings, findings) {
     var NET = LPC.network;
-    var raw = input.network || {};
     if (!NET) {
       errors.push('網路模型模組未載入。');
       return null;
     }
-    if (!NET.TYPES[raw.type]) {
-      errors.push('AI 沒有指定網路題型（轉運、最短路徑或最大流量）。');
+    var raw = networkPart(input);
+    if (!Array.isArray(raw.nodes) || !raw.nodes.length || !Array.isArray(raw.arcs) || !raw.arcs.length) {
+      errors.push('AI 回傳的網路模型缺少節點或弧線。');
       return null;
     }
+    var type = normalizeType(raw.type);
+    if (!type) {
+      /* AI 沒寫題型：依內容推測 */
+      var roles = raw.nodes.map(function (node) {
+        return normalizeRole(node && node.role);
+      });
+      var hasAmounts = raw.nodes.some(function (node) {
+        return node && node.amount !== undefined && node.amount !== null && node.amount !== '';
+      });
+      var hint = [input.title, input.objective_label, input.network_type].join(' ');
+      if (roles.indexOf('supply') >= 0 || roles.indexOf('demand') >= 0 || hasAmounts) {
+        type = 'transship';
+      } else if (normalizeType(hint)) {
+        type = normalizeType(hint);
+      } else {
+        type = input.sense === 'max' ? 'maxflow' : 'shortest';
+      }
+      warnings.push('AI 沒有寫明網路題型，系統依內容推測為「' + NET.TYPES[type].name + '」，請確認。');
+    }
+    raw.type = type;
     var nodes = (Array.isArray(raw.nodes) ? raw.nodes : []).map(function (node, index) {
       var item = node || {};
       return {
         name: String(item.name || '').trim(),
-        role: item.role,
+        role: normalizeRole(item.role),
         amount: item.amount === undefined || item.amount === null ? '' : numberText(item.amount, '節點「' + (item.name || index + 1) + '」的數量', errors)
       };
     });
@@ -850,6 +934,7 @@
 
     if (!converted) {
       return {
+        raw: data,
         ok: false,
         mode: 'ai',
         model: null,
@@ -875,6 +960,7 @@
     }
 
     var result = {
+      raw: data,
       ok: true,
       mode: 'ai',
       model: converted.model,
