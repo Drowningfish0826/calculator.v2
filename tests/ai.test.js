@@ -28,7 +28,19 @@ function check(name, condition, extra) {
   }
 }
 
-const SETTINGS = { key: 'sk-ant-test-0000000000000000', model: 'claude-haiku-5-5', remember: false };
+const SETTINGS = { provider: 'claude', key: 'sk-ant-test-0000000000000000', model: 'claude-haiku-5-5', remember: false };
+const GEMINI = { provider: 'gemini', key: 'AIzaSyTEST-0000000000000000000000', model: 'gemini-3.5-flash-lite', remember: false };
+
+function geminiReply(args, extra) {
+  return Object.assign({
+    candidates: [{
+      content: { role: 'model', parts: [{ functionCall: { id: 'call_1', name: 'submit_model', args } }] },
+      finishReason: 'STOP'
+    }],
+    usageMetadata: { promptTokenCount: 900, candidatesTokenCount: 300 },
+    modelVersion: 'gemini-3.5-flash-lite'
+  }, extra || {});
+}
 
 function reply(input, extra) {
   return Object.assign({
@@ -195,14 +207,96 @@ async function run() {
     { timeout: 30 }
   );
 
+  /* 6b. Google Gemini */
+  const gcalls = [];
+  const g = await AI.parse('某工廠生產 A、B 兩種產品……', { settings: GEMINI, fetch: fakeFetch(200, geminiReply(PRODUCTION), gcalls) });
+  const gcall = gcalls[0];
+  check('Gemini：送到 generateContent 並帶模型名稱', gcall.url === 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent', gcall.url);
+  check('Gemini：金鑰放在 x-goog-api-key 標頭（不放網址）', gcall.init.headers['x-goog-api-key'] === GEMINI.key && gcall.url.indexOf('key=') < 0);
+  check('Gemini：不帶 Claude 專用標頭', !gcall.init.headers['x-api-key'] && !gcall.init.headers['anthropic-version']);
+  const gbody = JSON.parse(gcall.init.body);
+  check('Gemini：系統提示放在 systemInstruction', /不要求解/.test(gbody.systemInstruction.parts[0].text));
+  check('Gemini：題目放在 contents', gbody.contents[0].role === 'user' && gbody.contents[0].parts[0].text.indexOf('A、B') >= 0);
+  check('Gemini：宣告 submit_model 函式', gbody.tools[0].functionDeclarations[0].name === 'submit_model');
+  check('Gemini：強制呼叫函式（mode ANY）', gbody.toolConfig.functionCallingConfig.mode === 'ANY' && gbody.toolConfig.functionCallingConfig.allowedFunctionNames[0] === 'submit_model');
+  check('Gemini：溫度 0（結果穩定）', gbody.generationConfig.temperature === 0);
+  const schemaText = JSON.stringify(gbody.tools[0].functionDeclarations[0].parameters);
+  check('Gemini：schema 拿掉不支援的 minimum／maximum', schemaText.indexOf('minimum') < 0 && schemaText.indexOf('maximum') < 0 && schemaText.indexOf('"enum"') >= 0);
+  check('Gemini：轉換成功且與規則引擎模型相同', g.ok && AI.sameModel(g.model, P.parse(P.SAMPLE_TEXTS.production).model), JSON.stringify(g.warnings));
+  check('Gemini：解析方式標示服務名稱', g.findings[0].value.indexOf('Google Gemini') >= 0, g.findings[0].value);
+  const gnet = await AI.parse('x', { settings: GEMINI, fetch: fakeFetch(200, geminiReply(SHORTEST)) });
+  check('Gemini：網路模型可求解得 38', gnet.ok && Number(N.solve(gnet.network).z) === 38);
+  const thinking = geminiReply(PRODUCTION);
+  thinking.candidates[0].content.parts.unshift({ text: '我先分析題目……', thought: true });
+  const gt = await AI.parse('x', { settings: GEMINI, fetch: fakeFetch(200, thinking) });
+  check('Gemini：前面有文字片段時仍找得到函式呼叫', gt.ok);
+
+  const gerr = (status, message, statusText) => fakeFetch(status, { error: { code: status, message, status: statusText } });
+  const expectGemini = async (title, fetchImpl, piece) => {
+    try {
+      await AI.parse('x', { settings: GEMINI, fetch: fetchImpl });
+      check(title + '：應該失敗', false);
+    } catch (error) {
+      check(title + '：訊息含「' + piece + '」', error.message.indexOf(piece) >= 0, error.message);
+    }
+  };
+  await expectGemini('Gemini 金鑰無效', gerr(400, 'API key not valid. Please pass a valid API key.', 'INVALID_ARGUMENT'), 'Gemini API 金鑰無效');
+  await expectGemini('Gemini 額度用完', gerr(429, 'Resource has been exhausted (e.g. check quota).', 'RESOURCE_EXHAUSTED'), '免費額度上限');
+  await expectGemini('Gemini 模型不存在', gerr(404, 'models/gemini-0 is not found', 'NOT_FOUND'), '改選其他模型');
+  await expectGemini('Gemini 權限', gerr(403, 'Permission denied', 'PERMISSION_DENIED'), '權限');
+  await expectGemini('Gemini 忙碌', gerr(503, 'The model is overloaded.', 'UNAVAILABLE'), '忙碌');
+  await expectGemini('Gemini 題目被擋', fakeFetch(200, { promptFeedback: { blockReason: 'SAFETY' } }), '拒絕處理');
+  await expectGemini('Gemini 只回文字', fakeFetch(200, { candidates: [{ content: { parts: [{ text: 'hello' }] }, finishReason: 'STOP' }] }), '沒有回傳模型');
+  await expectGemini('Gemini 被截斷', fakeFetch(200, { candidates: [{ content: { parts: [] }, finishReason: 'MAX_TOKENS' }] }), '截斷');
+  await expectGemini('Gemini 斷網', () => Promise.reject(new TypeError('Failed to fetch')), '連不到 Google Gemini');
+
+  /* 6c. 實測發現的問題：「無」被當成問題、LaTeX 記號、交叉驗證 */
+  const realistic = JSON.parse(JSON.stringify(PRODUCTION));
+  realistic.questions = ['無。'];
+  realistic.assumptions = ['將產品 A 的產量設為變數 $x_1$，產品 B 的產量設為變數 $x_2$。', '無'];
+  realistic.confidence = 0.95;
+  const re = await AI.parse('x', { settings: GEMINI, fetch: fakeFetch(200, geminiReply(realistic)) });
+  check('「無。」不算問題，信心度不被壓到 70%', re.confidence > 0.9 && re.questions.length === 0, re.confidence + ' ' + JSON.stringify(re.questions));
+  check('不顯示「題目可能缺少的資訊：無」', !re.warnings.some((w) => /缺少的資訊：無/.test(w)), re.warnings.join('|'));
+  check('LaTeX 記號被清成一般文字', re.warnings.some((w) => w.indexOf('變數 x1') >= 0 && w.indexOf('$') < 0), re.warnings.join('|'));
+  check('「無」也不算假設', re.assumptions.length === 1, JSON.stringify(re.assumptions));
+  ['沒有', 'None', 'N/A', '資訊完整。', '無缺少資訊'].forEach((word) => {
+    const r = AI.toResult(Object.assign({}, realistic, { questions: [word] }), { provider: 'gemini' });
+    check('「' + word + '」不算問題', r.questions.length === 0, JSON.stringify(r.questions));
+  });
+  check('真的缺資訊時仍保留', AI.toResult(Object.assign({}, realistic, { questions: ['題目沒有給 B 的利潤'] }), {}).questions.length === 1);
+  check('plainText：\\le 轉成 ≤', AI.plainText('$2x_1 + 3x_2 \\le 120$') === '2x1 + 3x2 ≤ 120', AI.plainText('$2x_1 + 3x_2 \\le 120$'));
+
+  const ruleProd = P.parse(P.SAMPLE_TEXTS.production);
+  const low = AI.toResult(Object.assign({}, PRODUCTION, { confidence: 0.6 }), { provider: 'gemini' });
+  const checked = AI.crossCheck(low, ruleProd);
+  check('交叉驗證一致：信心度提高到 98%', checked.confidence === 0.98 && checked.crossChecked === true, checked.confidence);
+  check('交叉驗證一致：findings 註明', checked.findings[1].label === '交叉驗證');
+  AI.crossCheck(checked, ruleProd);
+  check('交叉驗證不重複加註', checked.findings.filter((f) => f.label === '交叉驗證').length === 1);
+  const differ = AI.crossCheck(AI.toResult(Object.assign({}, PRODUCTION, { objective: [31, 50], confidence: 0.6 }), {}), ruleProd);
+  check('模型不同時不提高信心度', differ.confidence === 0.6 && !differ.crossChecked, differ.confidence);
+  const failedAI = AI.toResult({ kind: 'qp', assumptions: [], questions: [], confidence: 1 }, {});
+  check('AI 失敗時交叉驗證不動作', AI.crossCheck(failedAI, ruleProd).confidence === 0);
+  const systemText = AI.buildRequest('x', GEMINI).body.systemInstruction.parts[0].text;
+  check('提示詞要求沒有缺資訊時給空陣列', /不要寫「無」/.test(systemText));
+  check('提示詞要求不使用 LaTeX', /LaTeX/.test(systemText));
+
   /* 7. 設定 */
-  AI.saveSettings({ key: '  sk-ant-abc1234567890xyz  ', model: 'claude-sonnet-5-5', remember: false });
+  AI.saveSettings({ provider: 'claude', key: '  sk-ant-abc1234567890xyz  ', model: 'claude-sonnet-5-5', remember: false });
   check('設定：去除空白並保存', AI.getSettings().key === 'sk-ant-abc1234567890xyz' && AI.getSettings().model === 'claude-sonnet-5-5');
+  check('設定：目前服務為 Claude', AI.getSettings().provider === 'claude');
+  AI.saveSettings({ provider: 'gemini', key: 'AIzaSyGEMINIKEY-1234567890abcdef', model: 'gemini-3.8-flash', remember: false });
+  check('設定：切到 Gemini 後使用 Gemini 金鑰', AI.getSettings().provider === 'gemini' && AI.getSettings().key.indexOf('AIza') === 0);
+  check('設定：Claude 的金鑰仍各自保留', AI.getSettings('claude').key === 'sk-ant-abc1234567890xyz' && AI.getSettings('claude').model === 'claude-sonnet-5-5');
+  check('設定：Gemini 模型保存', AI.getSettings('gemini').model === 'gemini-3.8-flash');
   check('設定：已設定', AI.isConfigured());
-  check('設定：遮蔽顯示金鑰', AI.maskKey(AI.getSettings().key) === 'sk-ant-…0xyz', AI.maskKey(AI.getSettings().key));
+  check('設定：遮蔽顯示金鑰', AI.maskKey(AI.getSettings('claude').key) === 'sk-ant-…0xyz', AI.maskKey(AI.getSettings('claude').key));
   AI.clearSettings();
-  check('設定：清除後未設定', !AI.isConfigured() && AI.getSettings().key === '');
-  check('模型清單含 Haiku 預設', AI.DEFAULT_MODEL === 'claude-haiku-5-5' && AI.MODELS.length >= 2);
+  check('設定：清除後兩種服務都沒有金鑰', !AI.isConfigured() && AI.getSettings('gemini').key === '' && AI.getSettings('claude').key === '');
+  check('設定：清除後保留選過的模型', AI.getSettings('gemini').model === 'gemini-3.8-flash');
+  check('預設服務為 Gemini（免費額度）', AI.DEFAULT_PROVIDER === 'gemini' && AI.DEFAULT_MODEL === 'gemini-3.5-flash-lite');
+  check('兩種服務都有模型清單', AI.PROVIDERS.gemini.models.length >= 2 && AI.PROVIDERS.claude.models.length >= 2);
   check('sameModel：不同模型判定不同', !AI.sameModel(P.parse(P.SAMPLE_TEXTS.production).model, P.parse(P.SAMPLE_TEXTS.diet).model));
 
   failures.forEach((line) => console.log(line));

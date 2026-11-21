@@ -1,8 +1,8 @@
 /* ============================================================================
- * ai.js — 文字建模的「AI 解析」（選用功能，使用者自備 Claude API 金鑰）
+ * ai.js — 文字建模的「AI 解析」（選用功能，使用者自備金鑰：Google Gemini 免費額度或 Claude）
  * ----------------------------------------------------------------------------
  * 分工原則：AI 只負責「讀懂題目、轉成模型」，求解仍交給本機的精確分數求解器。
- *   1. 以 tool use 強制 Claude 回傳固定格式的 JSON（submit_model 工具）
+ *   1. 以 function calling／tool use 強制模型回傳固定格式的 JSON（submit_model 工具）
  *   2. 本機嚴格驗證：數字、長度、關係符號、網路節點……任何一項不合格就不套用
  *   3. 轉成與規則引擎相同的結果格式 { ok, mode, model, network?, findings, warnings, confidence }
  * 金鑰只存在使用者自己的瀏覽器（預設只保留到分頁關閉），不會寫進程式碼或上傳到 GitHub。
@@ -14,23 +14,59 @@
   var Frac = LPC.Frac;
   var modelLib = LPC.model;
 
-  var API_URL = 'https://api.anthropic.com/v1/messages';
-  var API_VERSION = '2023-06-01';
-  var STORAGE_KEY = 'lpc.ai.v1';
+  var STORAGE_KEY = 'lpc.ai.v2';
+  var LEGACY_STORAGE_KEY = 'lpc.ai.v1';
   var TIMEOUT_MS = 60000;
 
-  var MODELS = [
-    { id: 'claude-haiku-5-5', name: 'Claude Haiku 5.5', note: '快速便宜・建議' },
-    { id: 'claude-sonnet-5-5', name: 'Claude Sonnet 5.5', note: '較準確' },
-    { id: 'claude-opus-5-5', name: 'Claude Opus 5.5', note: '最強・較貴' }
-  ];
-  var DEFAULT_MODEL = MODELS[0].id;
+  /* 支援的 AI 服務。Gemini 有免費額度（不用信用卡），所以是預設值 */
+  var PROVIDERS = {
+    gemini: {
+      id: 'gemini',
+      name: 'Google Gemini',
+      label: 'Google Gemini（有免費額度）',
+      keyPlaceholder: 'AIza...',
+      keyLink: 'https://aistudio.google.com/apikey',
+      keyLinkText: 'Google AI Studio',
+      priceNote: '免費額度不用信用卡（Flash-Lite 每天約 500 次、3.8 Flash 約 20 次，以 Google 公告為準）；免費版的題目內容可能被 Google 用來改進模型，請勿輸入機密資料。',
+      models: [
+        { id: 'gemini-3.5-flash-lite', name: 'Gemini 3.5 Flash-Lite', note: '建議' },
+        { id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash', note: '較準確' },
+        { id: 'gemini-3.1-flash-lite', name: 'Gemini 3.1 Flash-Lite', note: '備用' }
+      ]
+    },
+    claude: {
+      id: 'claude',
+      name: 'Claude',
+      label: 'Anthropic Claude（付費）',
+      keyPlaceholder: 'sk-ant-...',
+      keyLink: 'https://console.anthropic.com/',
+      keyLinkText: 'Claude Console',
+      priceNote: '依用量計費，每題通常不到台幣 1 元。',
+      models: [
+        { id: 'claude-haiku-5-5', name: 'Claude Haiku 5.5', note: '快速便宜・建議' },
+        { id: 'claude-sonnet-5-5', name: 'Claude Sonnet 5.5', note: '較準確' },
+        { id: 'claude-opus-5-5', name: 'Claude Opus 5.5', note: '最強・較貴' }
+      ]
+    }
+  };
+  var DEFAULT_PROVIDER = 'gemini';
+  var MODELS = PROVIDERS.claude.models;
+  var DEFAULT_MODEL = PROVIDERS[DEFAULT_PROVIDER].models[0].id;
 
   /* --------------------------------------------------------------------- */
-  /* 設定（金鑰、模型）                                                    */
+  /* 設定（服務、金鑰、模型）：每個服務各自記住自己的金鑰與模型            */
   /* --------------------------------------------------------------------- */
 
-  var memory = { key: '', model: DEFAULT_MODEL, remember: false };
+  function freshMemory() {
+    return {
+      provider: DEFAULT_PROVIDER,
+      remember: false,
+      gemini: { key: '', model: PROVIDERS.gemini.models[0].id },
+      claude: { key: '', model: PROVIDERS.claude.models[0].id }
+    };
+  }
+
+  var memory = freshMemory();
 
   function storageFor(remember) {
     try {
@@ -40,18 +76,37 @@
     }
   }
 
+  function providerOf(id) {
+    return PROVIDERS[id] ? id : DEFAULT_PROVIDER;
+  }
+
   function loadSettings() {
+    memory = freshMemory();
     var stores = [storageFor(true), storageFor(false)];
     for (var index = 0; index < stores.length; index += 1) {
       try {
-        var raw = stores[index] && stores[index].getItem(STORAGE_KEY);
+        var store = stores[index];
+        var raw = store && store.getItem(STORAGE_KEY);
         if (raw) {
           var data = JSON.parse(raw);
-          memory = {
-            key: String(data.key || ''),
-            model: String(data.model || DEFAULT_MODEL),
-            remember: index === 0
-          };
+          memory.provider = providerOf(data.provider);
+          memory.remember = index === 0;
+          ['gemini', 'claude'].forEach(function (id) {
+            if (data[id]) {
+              memory[id].key = String(data[id].key || '');
+              memory[id].model = String(data[id].model || memory[id].model);
+            }
+          });
+          return getSettings();
+        }
+        /* 舊版（只有 Claude）的設定 */
+        var legacy = store && store.getItem(LEGACY_STORAGE_KEY);
+        if (legacy) {
+          var old = JSON.parse(legacy);
+          memory.provider = 'claude';
+          memory.remember = index === 0;
+          memory.claude.key = String(old.key || '');
+          memory.claude.model = String(old.model || memory.claude.model);
           return getSettings();
         }
       } catch (error) {
@@ -61,43 +116,64 @@
     return getSettings();
   }
 
-  function getSettings() {
-    return { key: memory.key, model: memory.model, remember: memory.remember };
+  /** 目前選用服務的設定；指定 provider 時取該服務的設定 */
+  function getSettings(provider) {
+    var id = providerOf(provider || memory.provider);
+    return { provider: id, key: memory[id].key, model: memory[id].model, remember: memory.remember };
   }
 
-  function saveSettings(settings) {
-    memory = {
-      key: String(settings.key || '').trim(),
-      model: String(settings.model || DEFAULT_MODEL).trim() || DEFAULT_MODEL,
-      remember: Boolean(settings.remember)
-    };
-    [true, false].forEach(function (remember) {
-      var store = storageFor(remember);
-      try {
-        if (store) {
-          store.removeItem(STORAGE_KEY);
+  function persist() {
+    [STORAGE_KEY, LEGACY_STORAGE_KEY].forEach(function (name) {
+      [true, false].forEach(function (remember) {
+        var store = storageFor(remember);
+        try {
+          if (store) {
+            store.removeItem(name);
+          }
+        } catch (error) {
+          /* 忽略 */
         }
-      } catch (error) {
-        /* 忽略 */
-      }
+      });
     });
+    var hasKey = memory.gemini.key || memory.claude.key;
     var target = storageFor(memory.remember);
     try {
-      if (target && memory.key) {
-        target.setItem(STORAGE_KEY, JSON.stringify({ key: memory.key, model: memory.model }));
+      if (target && hasKey) {
+        target.setItem(
+          STORAGE_KEY,
+          JSON.stringify({ provider: memory.provider, gemini: memory.gemini, claude: memory.claude })
+        );
       }
     } catch (error) {
       /* 無痕模式等情況：只留在記憶體 */
     }
+  }
+
+  function saveSettings(settings) {
+    var input = settings || {};
+    var id = providerOf(input.provider || memory.provider);
+    memory.provider = id;
+    memory[id].key = String(input.key || '').trim();
+    memory[id].model = String(input.model || '').trim() || PROVIDERS[id].models[0].id;
+    memory.remember = Boolean(input.remember);
+    persist();
     return getSettings();
   }
 
+  /** 清除所有服務的金鑰 */
   function clearSettings() {
-    return saveSettings({ key: '', model: memory.model, remember: false });
+    var provider = memory.provider;
+    var models = { gemini: memory.gemini.model, claude: memory.claude.model };
+    memory = freshMemory();
+    memory.provider = provider;
+    memory.gemini.model = models.gemini;
+    memory.claude.model = models.claude;
+    persist();
+    return getSettings();
   }
 
   function isConfigured() {
-    return /^sk-/.test(memory.key) || memory.key.length > 20;
+    return memory[memory.provider].key.length > 20;
   }
 
   function maskKey(key) {
@@ -134,8 +210,9 @@
     '  最短路徑若題目說是無方向（雙向）道路，reverse 填與 value 相同的數字。',
     '',
     '共同規則：',
-    '- 題目缺少的數字先填 0，並在 questions 用一句話說明缺了什麼。',
-    '- 你做的任何推論或假設（例如把「工時」視為人力）都寫進 assumptions，每點一句、使用繁體中文。',
+    '- 題目缺少的數字先填 0，並在 questions 用一句話說明缺了什麼；資訊完整時 questions 必須是空陣列，不要寫「無」。',
+    '- assumptions 只寫會影響模型的推論（例如把「工時」視為人力、自行相減得到利潤）；不要重述題目已明確寫出的數字或變數定義，沒有就給空陣列。',
+    '- 所有文字使用繁體中文，不要使用 LaTeX 或 $ 符號。',
     '- 若題目無法用線性規劃或上述網路模型表示，kind 填 "unsupported"，並在 questions 說明原因。',
     '- confidence 填 0 到 1：題目資訊完整且無歧義時接近 1，需要猜測時降低。'
   ].join('\n');
@@ -223,14 +300,65 @@
     }
   };
 
-  function buildRequest(text, settings) {
+  /** Gemini 的 function calling 只接受 OpenAPI 的一小部分關鍵字，其餘（minimum 等）拿掉 */
+  function geminiSchema(schema) {
+    if (!schema || typeof schema !== 'object') {
+      return schema;
+    }
+    var output = {};
+    ['type', 'description', 'enum', 'required'].forEach(function (key) {
+      if (schema[key] !== undefined) {
+        output[key] = schema[key];
+      }
+    });
+    if (schema.items) {
+      output.items = geminiSchema(schema.items);
+    }
+    if (schema.properties) {
+      output.properties = {};
+      Object.keys(schema.properties).forEach(function (key) {
+        output.properties[key] = geminiSchema(schema.properties[key]);
+      });
+    }
+    return output;
+  }
+
+  /** 依服務組出 { url, headers, body } */
+  function buildRequest(text, settingsInput) {
+    var settings = settingsInput || getSettings();
+    var provider = providerOf(settings.provider);
+    var model = settings.model || PROVIDERS[provider].models[0].id;
+    if (provider === 'gemini') {
+      return {
+        provider: provider,
+        url: 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent',
+        headers: { 'content-type': 'application/json', 'x-goog-api-key': settings.key },
+        body: {
+          systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+          contents: [{ role: 'user', parts: [{ text: String(text) }] }],
+          tools: [{ functionDeclarations: [{ name: TOOL.name, description: TOOL.description, parameters: geminiSchema(TOOL.input_schema) }] }],
+          toolConfig: { functionCallingConfig: { mode: 'ANY', allowedFunctionNames: [TOOL.name] } },
+          generationConfig: { temperature: 0, maxOutputTokens: 8192 }
+        }
+      };
+    }
     return {
-      model: (settings && settings.model) || DEFAULT_MODEL,
-      max_tokens: 4096,
-      system: SYSTEM_PROMPT,
-      tools: [TOOL],
-      tool_choice: { type: 'tool', name: TOOL.name },
-      messages: [{ role: 'user', content: String(text) }]
+      provider: provider,
+      url: 'https://api.anthropic.com/v1/messages',
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': settings.key,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: {
+        model: model,
+        max_tokens: 4096,
+        system: SYSTEM_PROMPT,
+        tools: [TOOL],
+        tool_choice: { type: 'tool', name: TOOL.name },
+        messages: [{ role: 'user', content: String(text) }]
+      }
     };
   }
 
@@ -238,8 +366,30 @@
   /* 呼叫 API                                                              */
   /* --------------------------------------------------------------------- */
 
-  function friendlyError(status, apiMessage) {
+  function friendlyError(provider, status, apiMessage) {
     var detail = apiMessage ? '（' + apiMessage + '）' : '';
+    var message = String(apiMessage || '');
+    if (provider === 'gemini') {
+      if ((status === 400 || status === 401 || status === 403) && /api key|API_KEY/i.test(message)) {
+        return 'Gemini API 金鑰無效，請到「AI 設定」重新貼上金鑰。' + detail;
+      }
+      if (status === 403) {
+        return '這把金鑰沒有使用 Gemini API 的權限，請到 Google AI Studio 確認金鑰。' + detail;
+      }
+      if (status === 404) {
+        return '找不到指定的 Gemini 模型（可能已停用），請到「AI 設定」改選其他模型。' + detail;
+      }
+      if (status === 429) {
+        return '已達 Gemini 免費額度上限：每分鐘次數有限，請等一分鐘再試；若是每日次數用完，請明天再試或改選「Flash-Lite」模型。' + detail;
+      }
+      if (status === 400) {
+        return 'Gemini 拒絕了這次請求' + detail + '。';
+      }
+      if (status >= 500) {
+        return 'Gemini 服務暫時忙碌，請稍後再試。' + detail;
+      }
+      return 'AI 解析失敗（HTTP ' + status + '）' + detail;
+    }
     if (status === 401) {
       return 'API 金鑰無效或已被停用，請到「AI 設定」重新貼上金鑰。' + detail;
     }
@@ -261,13 +411,51 @@
     return 'AI 解析失敗（HTTP ' + status + '）' + detail;
   }
 
+  /** 從回應中取出 submit_model 的參數 */
+  function extractCall(provider, data, settings) {
+    if (provider === 'gemini') {
+      if (!data || !Array.isArray(data.candidates) || !data.candidates.length) {
+        if (data && data.promptFeedback && data.promptFeedback.blockReason) {
+          throw new Error('Gemini 拒絕處理這段文字（' + data.promptFeedback.blockReason + '），請改寫題目再試。');
+        }
+        throw new Error('AI 回傳的內容格式不正確。');
+      }
+      var candidate = data.candidates[0];
+      var parts = (candidate.content && candidate.content.parts) || [];
+      var call = parts.filter(function (part) {
+        return part && part.functionCall && part.functionCall.name === TOOL.name;
+      })[0];
+      if (!call) {
+        if (candidate.finishReason === 'MAX_TOKENS') {
+          throw new Error('題目太長，AI 的回答被截斷了。請把題目拆短一點再試。');
+        }
+        throw new Error('AI 沒有回傳模型資料' + (candidate.finishReason ? '（' + candidate.finishReason + '）' : '') + '，請再試一次。');
+      }
+      return { input: call.functionCall.args || {}, usage: data.usageMetadata || null, model: data.modelVersion || settings.model };
+    }
+    if (!data || !Array.isArray(data.content)) {
+      throw new Error('AI 回傳的內容格式不正確。');
+    }
+    if (data.stop_reason === 'max_tokens') {
+      throw new Error('題目太長，AI 的回答被截斷了。請把題目拆短一點再試。');
+    }
+    var block = data.content.filter(function (item) {
+      return item && item.type === 'tool_use' && item.name === TOOL.name;
+    })[0];
+    if (!block || !block.input) {
+      throw new Error('AI 沒有回傳模型資料，請再試一次。');
+    }
+    return { input: block.input, usage: data.usage || null, model: data.model || settings.model };
+  }
+
   /**
    * 送出題目並取得 submit_model 的輸入。fetchImpl 可替換（測試用）。
-   * 回傳 Promise<{ input, usage, model }>，失敗時 reject 一個帶有中文訊息的 Error。
+   * 回傳 Promise<{ input, usage, model, provider }>，失敗時 reject 一個帶有中文訊息的 Error。
    */
   function requestModel(text, options) {
     var opts = options || {};
     var settings = opts.settings || getSettings();
+    var provider = providerOf(settings.provider);
     var fetchImpl = opts.fetch || (global.fetch ? global.fetch.bind(global) : null);
     if (!fetchImpl) {
       return Promise.reject(new Error('這個瀏覽器不支援網路請求。'));
@@ -275,22 +463,19 @@
     if (!settings.key) {
       return Promise.reject(new Error('尚未設定 API 金鑰，請先到「AI 設定」貼上金鑰。'));
     }
+    var request = buildRequest(text, settings);
     var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    var timeout = opts.timeout || TIMEOUT_MS;
     var timer = setTimeout(function () {
       if (controller) {
         controller.abort();
       }
-    }, opts.timeout || TIMEOUT_MS);
+    }, timeout);
 
-    return fetchImpl(API_URL, {
+    return fetchImpl(request.url, {
       method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-api-key': settings.key,
-        'anthropic-version': API_VERSION,
-        'anthropic-dangerous-direct-browser-access': 'true'
-      },
-      body: JSON.stringify(buildRequest(text, settings)),
+      headers: request.headers,
+      body: JSON.stringify(request.body),
       signal: controller ? controller.signal : undefined
     })
       .then(
@@ -304,33 +489,23 @@
             }
             if (!response.ok) {
               var message = data && data.error && data.error.message;
-              throw new Error(friendlyError(response.status, message));
+              throw new Error(friendlyError(provider, response.status, message));
             }
             return data;
           });
         },
         function (error) {
           if (error && error.name === 'AbortError') {
-            throw new Error('AI 回應逾時（超過 ' + Math.round((opts.timeout || TIMEOUT_MS) / 1000) + ' 秒），請再試一次或改用較快的模型。');
+            throw new Error('AI 回應逾時（超過 ' + Math.round(timeout / 1000) + ' 秒），請再試一次或改用較快的模型。');
           }
-          throw new Error('連不到 Claude API，請檢查網路連線。（' + (error && error.message ? error.message : '網路錯誤') + '）');
+          throw new Error('連不到 ' + PROVIDERS[provider].name + ' API，請檢查網路連線。（' + (error && error.message ? error.message : '網路錯誤') + '）');
         }
       )
       .then(function (data) {
         clearTimeout(timer);
-        if (!data || !Array.isArray(data.content)) {
-          throw new Error('AI 回傳的內容格式不正確。');
-        }
-        if (data.stop_reason === 'max_tokens') {
-          throw new Error('題目太長，AI 的回答被截斷了。請把題目拆短一點再試。');
-        }
-        var call = data.content.filter(function (block) {
-          return block && block.type === 'tool_use' && block.name === TOOL.name;
-        })[0];
-        if (!call || !call.input) {
-          throw new Error('AI 沒有回傳模型資料，請再試一次。');
-        }
-        return { input: call.input, usage: data.usage || null, model: data.model || settings.model };
+        var reply = extractCall(provider, data, settings);
+        reply.provider = provider;
+        return reply;
       })
       .catch(function (error) {
         clearTimeout(timer);
@@ -365,13 +540,50 @@
     return text;
   }
 
+  /* 「無」「沒有」這類回答代表沒有內容，不算一個問題或假設 */
+  var EMPTY_ANSWER_RE = /^(?:無|沒有|皆無|均無|暫無|無缺少的?資訊|沒有缺少的?資訊|資訊(?:已)?完整|題目資訊完整|無其他假設|沒有其他假設|none|n\/?a|null|nil|-+)[。.！!]?$/i;
+
+  /** 拿掉 LaTeX 記號：$x_1$ → x1、\le → ≤ */
+  function plainText(text) {
+    return String(text)
+      .replace(/\$([^$]*)\$/g, '$1')
+      .replace(/\\(?:le|leq)\b/g, '≤')
+      .replace(/\\(?:ge|geq)\b/g, '≥')
+      .replace(/\\times\b/g, '×')
+      .replace(/([A-Za-z])_\{?(\d+)\}?/g, '$1$2')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
   function cleanList(list) {
     return (Array.isArray(list) ? list : [])
       .map(function (item) {
-        return String(item == null ? '' : item).trim();
+        return plainText(item == null ? '' : item);
       })
-      .filter(Boolean)
+      .filter(function (text) {
+        return text && !EMPTY_ANSWER_RE.test(text);
+      })
       .slice(0, 12);
+  }
+
+  /**
+   * 交叉驗證：AI 與離線規則引擎各自獨立解析，得到完全相同的模型時，
+   * 代表兩種方法互相印證，信心度提高到 98%。
+   */
+  function crossCheck(aiResult, ruleResult) {
+    if (!aiResult || !aiResult.ok || !ruleResult || !ruleResult.model) {
+      return aiResult;
+    }
+    if (sameModel(aiResult.model, ruleResult.model)) {
+      aiResult.confidence = Math.max(aiResult.confidence || 0, 0.98);
+      aiResult.crossChecked = true;
+      if (!aiResult.findings.some(function (finding) {
+        return finding.label === '交叉驗證';
+      })) {
+        aiResult.findings.splice(1, 0, { label: '交叉驗證', value: '✓ 與離線規則解析得到完全相同的模型' });
+      }
+    }
+    return aiResult;
   }
 
   var OP_SYMBOL = { '<=': '≤', '>=': '≥', '=': '=' };
@@ -607,7 +819,8 @@
     var info = meta || {};
     var errors = [];
     var warnings = [];
-    var findings = [{ label: '解析方式', value: 'AI 解析（' + (info.model || memory.model) + '）' }];
+    var providerName = PROVIDERS[providerOf(info.provider || memory.provider)].name;
+    var findings = [{ label: '解析方式', value: 'AI 解析（' + providerName + ' · ' + (info.model || getSettings().model) + '）' }];
     var data = input && typeof input === 'object' ? input : {};
     var assumptions = cleanList(data.assumptions);
     var questions = cleanList(data.questions);
@@ -681,7 +894,7 @@
   /** 一次完成：呼叫 API → 驗證 → 轉換 */
   function parse(text, options) {
     return requestModel(text, options).then(function (reply) {
-      return toResult(reply.input, { model: reply.model, usage: reply.usage });
+      return toResult(reply.input, { model: reply.model, usage: reply.usage, provider: reply.provider });
     });
   }
 
@@ -722,6 +935,8 @@
   loadSettings();
 
   LPC.ai = {
+    PROVIDERS: PROVIDERS,
+    DEFAULT_PROVIDER: DEFAULT_PROVIDER,
     MODELS: MODELS,
     DEFAULT_MODEL: DEFAULT_MODEL,
     SYSTEM_PROMPT: SYSTEM_PROMPT,
@@ -736,6 +951,8 @@
     requestModel: requestModel,
     toResult: toResult,
     parse: parse,
-    sameModel: sameModel
+    sameModel: sameModel,
+    crossCheck: crossCheck,
+    plainText: plainText
   };
 })(typeof window !== 'undefined' ? window : globalThis);

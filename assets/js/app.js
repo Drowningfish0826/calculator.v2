@@ -677,8 +677,14 @@
     /* 目標規劃與網路模型分頁有自己的結果面板：切換右側顯示哪一組 */
     var goalMode = state.mode === 'goal';
     var networkMode = state.mode === 'network';
+    var textMode = state.mode === 'text';
     document.body.classList.toggle('mode-goal', goalMode);
     document.body.classList.toggle('mode-network', networkMode);
+    document.body.classList.toggle('mode-text', textMode);
+    var textPane = qs('#nl-pane');
+    if (textPane) {
+      textPane.hidden = !textMode;
+    }
     var goalResult = qs('#goal-result');
     if (goalResult) {
       goalResult.hidden = !goalMode;
@@ -690,7 +696,7 @@
     ['#result-head', '.pane-result > .result-tabs', '#result-body'].forEach(function (selector) {
       var node = qs(selector);
       if (node) {
-        node.hidden = goalMode || networkMode;
+        node.hidden = goalMode || networkMode || textMode;
       }
     });
   }
@@ -1601,6 +1607,9 @@
       runRuleParse(text);
       state.nlShown = 'rules';
       renderNlResult();
+      revealNlResult();
+      var parsed = state.nlResults.rules;
+      toast(parsed && parsed.ok ? '解析完成，請在右邊核對結果' : '解析完成，但有資訊需要補充', parsed && parsed.ok ? undefined : 'error');
     });
 
     qs('#nl-ai').addEventListener('click', function () {
@@ -1609,8 +1618,12 @@
     qs('#nl-ai-toggle').addEventListener('click', function () {
       toggleAiSettings();
     });
+    qs('#nl-ai-provider').addEventListener('change', function () {
+      fillAiProvider(qs('#nl-ai-provider').value);
+    });
     qs('#nl-ai-save').addEventListener('click', function () {
       var settings = LPC.ai.saveSettings({
+        provider: qs('#nl-ai-provider').value,
         key: qs('#nl-ai-key').value,
         model: qs('#nl-ai-model').value,
         remember: qs('#nl-ai-remember').checked
@@ -1627,6 +1640,24 @@
       toast('已清除金鑰');
     });
     renderAiStatus();
+  }
+
+  /** 讓使用者看得到結果：捲到結果頂端；窄螢幕（上下排列）時捲到結果區 */
+  function revealNlResult() {
+    var body = qs('#nl-pane-body');
+    if (body) {
+      body.scrollTop = 0;
+    }
+    var pane = qs('#nl-pane');
+    if (pane && global.matchMedia && global.matchMedia('(max-width: 900px)').matches && pane.scrollIntoView) {
+      pane.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    var section = qs('#nl-result-section');
+    if (section) {
+      section.classList.remove('is-fresh');
+      void section.offsetWidth;
+      section.classList.add('is-fresh');
+    }
   }
 
   function runRuleParse(text) {
@@ -1646,23 +1677,39 @@
     qs('#nl-ai-toggle').setAttribute('aria-expanded', open ? 'true' : 'false');
     if (open) {
       var settings = LPC.ai.getSettings();
-      var select = qs('#nl-ai-model');
-      var models = LPC.ai.MODELS.slice();
-      if (!models.some(function (item) {
-        return item.id === settings.model;
-      })) {
-        models.push({ id: settings.model, name: settings.model, note: '自訂' });
-      }
-      select.innerHTML = models
-        .map(function (item) {
-          return '<option value="' + escapeHTML(item.id) + '"' + (item.id === settings.model ? ' selected' : '') + '>' +
-            escapeHTML(item.name + '　' + item.note) + '</option>';
+      qs('#nl-ai-provider').innerHTML = Object.keys(LPC.ai.PROVIDERS)
+        .map(function (id) {
+          return '<option value="' + id + '"' + (id === settings.provider ? ' selected' : '') + '>' + escapeHTML(LPC.ai.PROVIDERS[id].label) + '</option>';
         })
         .join('');
-      qs('#nl-ai-key').value = settings.key;
+      fillAiProvider(settings.provider);
       qs('#nl-ai-remember').checked = settings.remember;
       qs('#nl-ai-key').focus();
     }
+  }
+
+  /** 依選定的 AI 服務帶入它自己的金鑰、模型清單與申請說明 */
+  function fillAiProvider(providerId) {
+    var provider = LPC.ai.PROVIDERS[providerId];
+    var settings = LPC.ai.getSettings(providerId);
+    var models = provider.models.slice();
+    if (!models.some(function (item) {
+      return item.id === settings.model;
+    })) {
+      models.push({ id: settings.model, name: settings.model, note: '自訂' });
+    }
+    qs('#nl-ai-model').innerHTML = models
+      .map(function (item) {
+        return '<option value="' + escapeHTML(item.id) + '"' + (item.id === settings.model ? ' selected' : '') + '>' +
+          escapeHTML(item.name + '　' + item.note) + '</option>';
+      })
+      .join('');
+    var keyInput = qs('#nl-ai-key');
+    keyInput.value = settings.key;
+    keyInput.placeholder = provider.keyPlaceholder;
+    qs('#nl-ai-provider-note').innerHTML =
+      '金鑰申請：<a href="' + provider.keyLink + '" target="_blank" rel="noopener">' + escapeHTML(provider.keyLinkText) + '</a>。' +
+      escapeHTML(provider.priceNote);
   }
 
   function renderAiStatus() {
@@ -1674,14 +1721,14 @@
     if (state.nlAiBusy) {
       button.disabled = true;
       button.textContent = 'AI 解析中…';
-      status.textContent = '正在等待 Claude 回應（約 5～20 秒）';
+      status.textContent = '正在等待 ' + LPC.ai.PROVIDERS[LPC.ai.getSettings().provider].name + ' 回應（約 5～20 秒）';
       return;
     }
     button.disabled = false;
     button.textContent = 'AI 解析';
     var settings = LPC.ai.getSettings();
     status.textContent = LPC.ai.isConfigured()
-      ? 'AI 已設定：' + settings.model + '（金鑰 ' + LPC.ai.maskKey(settings.key) + '）'
+      ? 'AI 已設定：' + LPC.ai.PROVIDERS[settings.provider].name + ' · ' + settings.model + '（金鑰 ' + LPC.ai.maskKey(settings.key) + '）'
       : '解析結果可再回到「自訂模型」手動調整';
   }
 
@@ -1709,7 +1756,7 @@
     LPC.ai
       .parse(text)
       .then(function (result) {
-        state.nlResults.ai = result;
+        state.nlResults.ai = LPC.ai.crossCheck(result, state.nlResults.rules);
         state.nlAiText = text;
         state.nlShown = 'ai';
         toast(result.ok ? 'AI 解析完成' : 'AI 回傳的模型未通過檢查', result.ok ? undefined : 'error');
@@ -1722,6 +1769,7 @@
         state.nlAiBusy = false;
         renderAiStatus();
         renderNlResult();
+        revealNlResult();
       });
   }
 
@@ -1755,7 +1803,7 @@
     } else if (rules && !aiResult && !state.nlAiBusy && rules.mode !== 'shorthand' && (rules.confidence || 0) < 0.8) {
       parts.push(
         '<div class="callout ai-hint"><div class="callout-title">規則引擎沒什麼把握</div>' +
-        '這類題目可以試試「AI 解析」，由 Claude 讀懂題目後再交給本機求解器計算。' +
+        '這類題目可以試試「AI 解析」，由 AI 讀懂題目後再交給本機求解器計算（Google Gemini 有免費額度）。' +
         '<div class="step-actions"><button type="button" class="btn btn-outline btn-small" data-nl-ai-run>' +
         (LPC.ai.isConfigured() ? '改用 AI 解析' : '設定 AI 解析') + '</button></div></div>'
       );
@@ -1767,12 +1815,39 @@
     var section = qs('#nl-result-section');
     var shown = state.nlResults[state.nlShown] || state.nlResults.rules || state.nlResults.ai;
     state.nlResult = shown;
+    var empty = qs('#nl-empty');
+    var title = qs('#nl-pane-title');
     if (!state.nlResult) {
       section.hidden = true;
+      if (empty) {
+        empty.hidden = false;
+      }
+      if (title) {
+        title.textContent = state.nlAiBusy ? 'AI 解析中…' : '尚未解析';
+      }
+      qs('#nl-confidence').innerHTML = '';
+      if (state.nlAiBusy) {
+        section.hidden = false;
+        qs('#nl-result').innerHTML = renderNlCompare();
+        if (empty) {
+          empty.hidden = true;
+        }
+      }
       return;
     }
     section.hidden = false;
+    if (empty) {
+      empty.hidden = true;
+    }
     var result = state.nlResult;
+    if (title) {
+      title.textContent = !result.model
+        ? '無法建立模型'
+        : result.mode === 'network'
+        ? '網路模型 · ' + result.model.varNames.length + ' 個變數'
+        : (result.model.sense === 'max' ? '最大化' : '最小化') + ' · ' + result.model.varNames.length + ' 個變數 · ' +
+          result.model.constraints.length + ' 條限制式';
+    }
     var confidence = Math.round((result.confidence || 0) * 100);
     qs('#nl-confidence').innerHTML =
       '<span class="confidence-bar"><span>解析信心度 ' + confidence + '%</span>' +
@@ -1821,7 +1896,7 @@
           (result.mode === 'network'
             ? '網路題型：每行一條弧線，例如「1→2 21」「(1,2) 21」「Ohio→Indiana 16」；雙向寫「1↔2 6/0」（正向／反向）。轉運問題再加「供應：…」「需求：…」兩行。'
             : result.mode === 'ai'
-            ? 'AI 解析：Claude 只負責把題目轉成模型，數值仍由本機的精確求解器計算。AI 可能誤解題意，套用前請核對上面的限制式。'
+            ? 'AI 解析：AI 只負責把題目轉成模型，數值仍由本機的精確求解器計算。AI 可能誤解題意，套用前請核對上面的限制式。'
             : result.mode === 'shorthand'
             ? '速記格式：第一行為 max／min，第二行為「目標名稱 + 各變數係數」，其餘每行為「名稱 + 係數 + 關係符號 + 右端值」。'
             : '自然語言解析為規則式推論，僅抽取常見句型；若數值有誤，套用後可直接在左側表單修改。') +
