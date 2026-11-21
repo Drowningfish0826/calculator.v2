@@ -348,8 +348,12 @@
     Object.keys(perColumn).forEach(function (key) {
       tallest = Math.max(tallest, perColumn[key].length);
     });
+    /* 圓圈裡放得下：3 個以內的英數字或 1 個中文字；其餘名稱放在圓圈下方 */
+    var fitsInside = function (name) {
+      return /^[\x20-\x7e]{1,3}$/.test(name) || /^[^\x00-\x7e]$/.test(name);
+    };
     var longNames = compiled.nodes.some(function (node) {
-      return node.name.length > 3;
+      return !fitsInside(node.name);
     });
     var width = 720;
     var rowGap = longNames ? 96 : 84;
@@ -498,7 +502,7 @@
     var nodes = compiled.nodes
       .map(function (node, index) {
         var p = position[index];
-        var inside = node.name.length <= 3 ? node.name : String(index + 1);
+        var inside = fitsInside(node.name) ? node.name : String(index + 1);
         var classes = 'net-node net-role-' + node.role;
         if (index === compiled.source) {
           classes += ' is-source';
@@ -506,7 +510,7 @@
         if (index === compiled.sink) {
           classes += ' is-sink';
         }
-        var caption = node.name.length > 3 ? node.name : '';
+        var caption = fitsInside(node.name) ? '' : node.name;
         if (compiled.type === 'transship' && node.amount) {
           caption += (caption ? ' ' : '') + (node.role === 'supply' ? '供 ' : '需 ') + fmt(node.amount);
         }

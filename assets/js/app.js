@@ -1879,10 +1879,16 @@
         '</div></div>'
       : '';
 
+    var rawAI = result.mode === 'ai' && result.raw
+      ? '<details class="ai-raw"><summary>AI 原始回應（除錯用）</summary><pre>' +
+        escapeHTML(JSON.stringify(result.raw, null, 2)) + '</pre></details>'
+      : '';
+
     qs('#nl-result').innerHTML =
       renderNlCompare() +
       '<div class="parse-findings">' + findings + '</div>' +
       warnings +
+      rawAI +
       preview +
       (result.model
         ? '<div class="step-actions" style="margin-top:16px">' +
